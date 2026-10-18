@@ -1,0 +1,288 @@
+<template>
+  <!--
+    Dashboard PETUGAS (Presensi_petugas, :3001).
+    Fokus: monitoring kehadiran harian (total siswa, hadir, tidak hadir,
+    absensi terbaru, jadwal piket).
+    Dashboard ini BUKAN milik admin — dashboard admin ada di Presensi_admin (:3000).
+  -->
+  <div class="flex flex-col gap-6">
+    <p
+      v-if="errorMessage"
+      class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+      role="alert"
+    >
+      <TriangleAlert class="h-4 w-4 shrink-0" />
+      {{ errorMessage }}
+    </p>
+
+    <!-- Stat Cards -->
+    <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <!-- Kartu 1: Total Siswa -->
+      <base-card>
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Total Siswa</p>
+            <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ totalStudents }}</p>
+            <p class="mt-2 text-xs text-gray-500">{{ classroomCount }} kelas</p>
+          </div>
+          <div
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
+          >
+            <Users class="h-5 w-5" />
+          </div>
+        </div>
+      </base-card>
+
+      <!-- Kartu 2: Hadir -->
+      <base-card>
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Hadir</p>
+            <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ hadirToday }}</p>
+            <p class="mt-2 text-xs text-gray-500">
+              Batas absen masuk {{ boundaryTime ?? '--:--' }}
+            </p>
+          </div>
+          <div class="flex flex-col items-end gap-2">
+            <span
+              class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800"
+            >
+              {{ hadirPersen }}%
+            </span>
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
+            >
+              <UserCheck class="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+      </base-card>
+
+      <!-- Kartu 3: Tidak Hadir -->
+      <base-card>
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Tidak Hadir</p>
+            <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ tidakHadir }}</p>
+            <p class="mt-2 text-xs text-gray-500">Belum tercatat absen masuk hari ini</p>
+          </div>
+          <div
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
+          >
+            <UserX class="h-5 w-5" />
+          </div>
+        </div>
+      </base-card>
+
+      <!-- Kartu 4: Persentase Kehadiran -->
+      <base-card>
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Persentase Kehadiran
+            </p>
+            <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ persentase }}%</p>
+            <p class="mt-2 text-xs text-gray-500">Dihitung dari siswa yang sudah absen masuk</p>
+          </div>
+          <div
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
+          >
+            <Activity class="h-5 w-5" />
+          </div>
+        </div>
+      </base-card>
+    </section>
+
+    <!-- Bagian Tengah: Grafik aktivitas absensi + jadwal piket -->
+    <section class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <base-card
+        class="lg:col-span-2"
+        title="Aktivitas Absensi"
+        subtitle="Perbandingan hadir vs terlambat per hari"
+      >
+        <template #actions>
+          <div class="flex items-center gap-4 text-xs text-gray-500">
+            <span class="flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-emerald-900" />
+              Hadir
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-emerald-300" />
+              Terlambat
+            </span>
+          </div>
+        </template>
+
+        <div v-if="hasChartData" class="mt-4 flex h-56 items-end gap-2 sm:gap-3">
+          <div
+            v-for="day in chartDays"
+            :key="day.day"
+            class="flex h-full flex-1 flex-col items-center justify-end gap-2"
+          >
+            <div class="flex w-full items-end justify-center gap-1">
+              <div
+                class="w-1/2 rounded-t-sm bg-emerald-900 transition-all duration-300"
+                :style="{ height: barHeight(day.hadir) }"
+              />
+              <div
+                class="w-1/3 rounded-t-sm bg-emerald-300 transition-all duration-300"
+                :style="{ height: barHeight(day.terlambat) }"
+              />
+            </div>
+            <span class="text-xs text-gray-500">{{ day.day }}</span>
+          </div>
+        </div>
+
+        <div v-else class="mt-4 flex h-56 items-center justify-center text-sm text-gray-500">
+          Belum ada data absensi minggu ini.
+        </div>
+      </base-card>
+
+      <base-card title="Jadwal Piket" subtitle="Petugas dan lokasi hari ini">
+        <div class="mt-4 flex h-56 items-center justify-center text-center text-sm text-gray-500">
+          Belum ada jadwal piket.
+        </div>
+      </base-card>
+    </section>
+
+    <!-- Bagian Bawah: Tabel Absensi Terbaru -->
+    <base-card title="Absensi Terbaru" subtitle="Log kehadiran siswa paling baru">
+      <data-table :columns="recentColumns" :rows="recentRows" :empty-text="'Belum ada data absensi.'">
+        <template #cell-metode="{ value }">
+          <span class="text-sm text-gray-600">{{ methodLabel(String(value)) }}</span>
+        </template>
+        <template #cell-status="{ value }">
+          <span
+            class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+            :class="STATUS_META[value as AttendanceStatus].badge"
+          >
+            {{ STATUS_META[value as AttendanceStatus].label }}
+          </span>
+        </template>
+      </data-table>
+    </base-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Activity, TriangleAlert, UserCheck, Users, UserX } from '@lucide/vue'
+import type { TableColumn } from '#layers/shared/app/components/table/DataTable.vue'
+import type { ApiAttendance } from '#layers/shared/app/composables/useApi'
+
+definePageMeta({
+  layout: 'petugas',
+  title: 'Dashboard',
+})
+
+const api = useApi()
+
+const totalStudents = ref(0)
+const classroomCount = ref(0)
+const hadirToday = ref(0)
+const terlambatToday = ref(0)
+const boundaryTime = ref<string | null>(null)
+const errorMessage = ref('')
+const recentRows = ref<Record<string, unknown>[]>([])
+const chartDays = ref<Array<{ day: string; hadir: number; terlambat: number }>>([])
+
+const recentColumns: TableColumn[] = [
+  { key: 'name', label: 'Nama' },
+  { key: 'kelas', label: 'Kelas' },
+  { key: 'jamMasuk', label: 'Jam Masuk' },
+  { key: 'metode', label: 'Metode' },
+  { key: 'status', label: 'Status' },
+]
+
+const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+
+const formatTime = (value: string) =>
+  new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+
+const toIsoDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+const methodLabel = (value: string) => METHOD_LABEL[value as AttendanceMethod] ?? value
+
+const toRecentRow = (attendance: ApiAttendance) => {
+  const isMasuk = attendance.session.code === 'masuk'
+
+  return {
+    name: attendance.student?.full_name ?? '-',
+    kelas: attendance.student?.classroom?.name ?? '-',
+    jamMasuk: isMasuk ? formatTime(attendance.checked_at) : '--:--',
+    metode: attendance.method.code.replace('_', ' '),
+    status: attendance.status.code,
+  }
+}
+
+/** Bangun data grafik 7 hari terakhir dari daftar absensi (sesi masuk). */
+const buildChart = (attendances: ApiAttendance[]) => {
+  const days: Array<{ day: string; hadir: number; terlambat: number }> = []
+
+  for (let offset = 6; offset >= 0; offset--) {
+    const date = new Date()
+    date.setDate(date.getDate() - offset)
+    const iso = toIsoDate(date)
+    const masuk = attendances.filter(
+      (attendance) => attendance.attendance_date === iso && attendance.session.code === 'masuk',
+    )
+
+    days.push({
+      day: DAY_LABELS[date.getDay()] ?? '',
+      hadir: masuk.filter((attendance) => attendance.status.code === 'hadir').length,
+      terlambat: masuk.filter((attendance) => attendance.status.code === 'terlambat').length,
+    })
+  }
+
+  chartDays.value = days
+}
+
+const chartMax = computed(() => {
+  const values = chartDays.value.flatMap((day) => [day.hadir, day.terlambat])
+  return Math.max(1, ...values)
+})
+const barHeight = (value: number) => `${Math.round((value / chartMax.value) * 100)}%`
+const hasChartData = computed(() => chartDays.value.some((day) => day.hadir || day.terlambat))
+
+const tidakHadir = computed(() =>
+  Math.max(0, totalStudents.value - hadirToday.value - terlambatToday.value),
+)
+const kehadiranCount = computed(() => hadirToday.value + terlambatToday.value)
+const persentase = computed(() =>
+  totalStudents.value ? Math.round((kehadiranCount.value / totalStudents.value) * 100) : 0,
+)
+const hadirPersen = computed(() =>
+  totalStudents.value ? Math.round((hadirToday.value / totalStudents.value) * 100) : 0,
+)
+
+const loadDashboard = async () => {
+  errorMessage.value = ''
+  const today = toIsoDate(new Date())
+
+  try {
+    const [students, classrooms, meta, hadir, terlambat, recent] = await Promise.all([
+      api.students({ per_page: 1 }),
+      api.classrooms(),
+      api.meta(),
+      api.attendances({ date: today, session: 'masuk', status: 'hadir', per_page: 1 }),
+      api.attendances({ date: today, session: 'masuk', status: 'terlambat', per_page: 1 }),
+      api.attendances({ per_page: 200 }),
+    ])
+
+    totalStudents.value = students.meta.total
+    classroomCount.value = classrooms.data.length
+    hadirToday.value = hadir.meta.total
+    terlambatToday.value = terlambat.meta.total
+
+    const masuk = meta.data.attendance_sessions.find((session) => session.code === 'masuk')
+    boundaryTime.value = masuk?.boundary_time ? masuk.boundary_time.slice(0, 5) : null
+
+    recentRows.value = recent.data.slice(0, 5).map(toRecentRow)
+    buildChart(recent.data)
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error)
+  }
+}
+
+onMounted(loadDashboard)
+</script>

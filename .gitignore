@@ -1,0 +1,28 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+.output
+.nuxt
+.nitro
+.cache
+.data
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Misc
+.DS_Store
+Thumbs.db
+.fleet
+.idea
+.vscode
+
+# Local env files
+.env
+.env.*
+!.env.example

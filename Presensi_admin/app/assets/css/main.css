@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/*
+ * Kode bersama (komponen UI/tabel/layout) tinggal di layer @presensi/shared,
+ * di luar folder app ini. Tailwind v4 tidak memindai node_modules/paket
+ * secara otomatis, jadi kita daftarkan folder layer-nya sebagai sumber kelas.
+ */
+@source "../../../../packages/shared/app";
+
+@theme {
+  --font-sans: "Inter", "SF Pro", "Roboto", system-ui, -apple-system, sans-serif;
+
+  /* Warna primer (brand) */
+  --color-primary: #a3e635;
+  --color-primary-500: #84cc16;
+
+  /*
+   * Konfigurasi warna tema dashboard (Tailwind v4 CSS-first).
+   * `bg-emerald-900` / `bg-slate-50` / `bg-white` sudah built-in,
+   * token di bawah adalah alias semantik agar konsisten antar komponen.
+   */
+  --color-canvas: #f8fafc; /* Latar utama workspace -> slate-50 */
+  --color-surface: #ffffff; /* Kartu & tabel -> putih murni */
+  --color-brand: #064e3b; /* Hijau tua (emerald-900) -> tombol aksi */
+  --color-brand-light: #065f46; /* Hijau tua terang (emerald-800) -> state aktif sidebar */
+}
+
+html {
+  font-family: var(--font-sans);
+}

@@ -1,0 +1,27 @@
+{
+  "name": "presensi-project",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo Presensi Sekolah: 1 backend Laravel + 3 app Nuxt (admin, petugas, mobile siswa).",
+  "workspaces": [
+    "packages/*",
+    "Presensi_admin",
+    "Presensi_petugas",
+    "Presensi_mobile"
+  ],
+  "scripts": {
+    "dev:admin": "npm run dev -w presensi-admin -- --port 3000",
+    "dev:petugas": "npm run dev -w presensi-petugas -- --port 3001",
+    "dev:mobile": "npm run dev -w presensi-mobile -- --port 3002",
+    "build:admin": "npm run build -w presensi-admin",
+    "build:petugas": "npm run build -w presensi-petugas",
+    "build:mobile": "npm run build -w presensi-mobile",
+    "typecheck:admin": "npm run typecheck -w presensi-admin",
+    "typecheck:petugas": "npm run typecheck -w presensi-petugas",
+    "typecheck:mobile": "npm run typecheck -w presensi-mobile"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}
