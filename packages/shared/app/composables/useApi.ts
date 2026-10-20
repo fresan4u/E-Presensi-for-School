@@ -98,7 +98,7 @@ export interface ApiAttendance {
 
 export interface ScanResult {
   data: ApiAttendance
-  meta: { created: boolean; distance: number; threshold: number }
+  meta: { created: boolean; distance: number; threshold: number; wa_queued: boolean }
 }
 
 export interface ApiFaceMeta {
@@ -316,10 +316,10 @@ export const useApi = () => {
       }),
 
     /* Absensi */
-    scan: (descriptor: number[], session: 'masuk' | 'pulang') =>
+    scan: (descriptor: number[], session: 'masuk' | 'pulang', photo?: string) =>
       client<ScanResult>('/attendance/scan', {
         method: 'POST',
-        body: { descriptor, session },
+        body: { descriptor, session, ...(photo ? { photo } : {}) },
       }),
     attendances: (query: Record<string, unknown> = {}) =>
       client<Paginated<ApiAttendance>>('/attendances', { query }),
@@ -339,10 +339,10 @@ export const useApi = () => {
     studentLogout: () => client<{ message: string }>('/student/logout', { method: 'POST' }),
     studentAttendances: (query: Record<string, unknown> = {}) =>
       client<Paginated<ApiAttendance>>('/student/attendances', { query }),
-    studentScan: (descriptor: number[], session: 'masuk' | 'pulang') =>
+    studentScan: (descriptor: number[], session: 'masuk' | 'pulang', photo?: string) =>
       client<ScanResult>('/student/attendance/scan', {
         method: 'POST',
-        body: { descriptor, session },
+        body: { descriptor, session, ...(photo ? { photo } : {}) },
       }),
   }
 }

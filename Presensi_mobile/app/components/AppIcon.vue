@@ -103,6 +103,12 @@ const ICONS = {
   alert: {
     paths: ['M12 8.5v4', 'M12 16v.01', 'M10.3 4.2 2.8 17.2A1.6 1.6 0 0 0 4.2 19.6h15.6a1.6 1.6 0 0 0 1.4-2.4L13.7 4.2a2 2 0 0 0-3.4 0Z'],
   },
+  'message-circle': {
+    // gelembung chat (notifikasi WhatsApp)
+    paths: [
+      'M21 11.5a8.4 8.4 0 0 1-8.5 8.4 8.8 8.8 0 0 1-3.8-.9L3 20.5l1.5-4.6A8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5Z',
+    ],
+  },
 } as const
 
 export type IconName = keyof typeof ICONS

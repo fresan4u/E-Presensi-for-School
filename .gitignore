@@ -26,3 +26,5 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+# Template environment untuk deploy Render (tidak berisi rahasia).
+!.env.render

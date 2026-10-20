@@ -15,10 +15,13 @@ use App\Models\AttendanceStatus;
 use App\Models\Classroom;
 use App\Models\Student;
 use App\Models\StudentFaceDescriptor;
+use App\Models\WaOutbox;
 use App\Services\FaceMatchingService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class AttendanceController extends Controller
 {
@@ -197,7 +200,9 @@ class AttendanceController extends Controller
         }
 
         $student = $match['descriptor']->student;
-        $attendance = $this->persistAttendance($student, $session, $at, $match['descriptor'], $match['distance']);
+        $photoPath = $this->storeScanPhoto($data['photo'] ?? null, $student, $at, $session->code);
+        $attendance = $this->persistAttendance($student, $session, $at, $match['descriptor'], $match['distance'], $photoPath);
+        $this->discardDuplicatePhoto($attendance, $photoPath);
 
         $created = $attendance->wasRecentlyCreated;
 
@@ -206,6 +211,7 @@ class AttendanceController extends Controller
                 'created' => $created,
                 'distance' => round($match['distance'], 4),
                 'threshold' => $this->faceMatcher->threshold(),
+                'wa_queued' => $this->waQueued($attendance),
             ]])
             ->response();
     }
@@ -235,13 +241,16 @@ class AttendanceController extends Controller
             ], 404);
         }
 
-        $attendance = $this->persistAttendance($student, $session, $at, $match['descriptor'], $match['distance']);
+        $photoPath = $this->storeScanPhoto($data['photo'] ?? null, $student, $at, $session->code);
+        $attendance = $this->persistAttendance($student, $session, $at, $match['descriptor'], $match['distance'], $photoPath);
+        $this->discardDuplicatePhoto($attendance, $photoPath);
 
         return (new AttendanceResource($attendance->load($this->relations())))
             ->additional(['meta' => [
                 'created' => $attendance->wasRecentlyCreated,
                 'distance' => round($match['distance'], 4),
                 'threshold' => $this->faceMatcher->threshold(),
+                'wa_queued' => $this->waQueued($attendance),
             ]])
             ->response();
     }
@@ -310,6 +319,7 @@ class AttendanceController extends Controller
         Carbon $at,
         ?StudentFaceDescriptor $descriptor = null,
         ?float $distance = null,
+        ?string $photoPath = null,
     ): Attendance {
         $status = $this->resolveStatus($session, $at);
         $yearId = AcademicYear::where('is_active', true)->value('id');
@@ -327,19 +337,93 @@ class AttendanceController extends Controller
                 'method_id' => $methodId,
                 'matched_descriptor_id' => $descriptor?->id,
                 'match_distance' => $distance,
+                'photo_path' => $photoPath,
                 'checked_at' => $at,
             ],
         );
     }
 
+    /**
+     * Simpan foto bukti hasil capture frame (data URI JPEG base64) ke storage
+     * lokal. Mengembalikan path relatif untuk kolom `attendances.photo_path`.
+     * Nama file selalu unik sehingga scan ulang tidak menimpa foto asli.
+     */
+    private function storeScanPhoto(?string $photo, Student $student, Carbon $at, string $sessionCode): ?string
+    {
+        if (blank($photo)) {
+            return null;
+        }
+
+        $commaPos = strpos($photo, ',');
+        $binary = base64_decode($commaPos === false ? $photo : substr($photo, $commaPos + 1), true);
+
+        if ($binary === false) {
+            return null;
+        }
+
+        $path = sprintf(
+            'attendance-photos/%s/%s-s%d-%d-%s.jpg',
+            $at->toDateString(),
+            $sessionCode,
+            $student->id,
+            $at->timestamp,
+            Str::lower(Str::random(6)),
+        );
+
+        Storage::put($path, $binary);
+
+        return $path;
+    }
+
+    /**
+     * Absensi sudah tercatat (scan ulang): buang foto yang baru saja ditulis
+     * supaya tidak menumpuk sebagai file yatim — foto lama tidak ditimpa.
+     */
+    private function discardDuplicatePhoto(Attendance $attendance, ?string $photoPath): void
+    {
+        if (! $attendance->wasRecentlyCreated && $photoPath !== null) {
+            Storage::delete($photoPath);
+        }
+    }
+
+    /**
+     * Apakah absensi ini benar-benar masuk antrean notifikasi WhatsApp?
+     * Status `sending`/`sent` ikut dihitung: pada queue `sync` (tes) job bisa
+     * selesai sebelum nilai meta dibaca.
+     */
+    private function waQueued(Attendance $attendance): bool
+    {
+        if (! $attendance->wasRecentlyCreated) {
+            return false;
+        }
+
+        $status = WaOutbox::query()
+            ->where('attendance_id', $attendance->id)
+            ->value('status');
+
+        return in_array($status, [
+            WaOutbox::STATUS_PENDING,
+            WaOutbox::STATUS_SENDING,
+            WaOutbox::STATUS_SENT,
+        ], true);
+    }
+
+    /**
+     * Status kehadiran sebuah sesi absensi.
+     *
+     * SEMENTARA (mode demo): setiap absensi selalu tercatat `hadir` tanpa
+     * memperhitungkan `boundary_time`, supaya demo tidak bergantung pada jam
+     * tertentu. Blok pembanding waktu di bawah sengaja dikomentari dan harus
+     * dipulihkan setelah demo selesai.
+     */
     private function resolveStatus(AttendanceSession $session, Carbon $at): AttendanceStatus
     {
-        if ($session->code === 'masuk' && $session->boundary_time) {
-            $boundary = Carbon::parse($at->toDateString().' '.$session->boundary_time);
-            $code = $at->greaterThan($boundary) ? 'terlambat' : 'hadir';
-
-            return AttendanceStatus::where('code', $code)->firstOrFail();
-        }
+        // if ($session->code === 'masuk' && $session->boundary_time) {
+        //     $boundary = Carbon::parse($at->toDateString().' '.$session->boundary_time);
+        //     $code = $at->greaterThan($boundary) ? 'terlambat' : 'hadir';
+        //
+        //     return AttendanceStatus::where('code', $code)->firstOrFail();
+        // }
 
         return AttendanceStatus::where('code', 'hadir')->firstOrFail();
     }

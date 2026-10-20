@@ -17,6 +17,13 @@ class ScanAttendanceRequest extends FormRequest
             'descriptor' => ['required', 'array', 'size:128'],
             'descriptor.*' => ['numeric'],
             'session' => ['required', 'string', 'exists:attendance_sessions,code'],
+
+            // Opsional: foto bukti hasil capture frame kamera (data URI JPEG
+            // base64, maks. ~3 MB ter-decode) — dilampirkan ke chat wali.
+            'photo' => [
+                'nullable', 'string', 'max:4000000',
+                'regex:/^data:image\/(jpeg|jpg);base64,[A-Za-z0-9+\/=]+$/',
+            ],
         ];
     }
 }

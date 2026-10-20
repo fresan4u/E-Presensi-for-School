@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Observers\AttendanceObserver;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'student_id', 'academic_year_id', 'attendance_date', 'session_id',
     'status_id', 'method_id', 'matched_descriptor_id', 'match_distance',
-    'checked_at', 'note', 'created_by',
+    'checked_at', 'note', 'photo_path', 'created_by',
 ])]
+#[ObservedBy(AttendanceObserver::class)]
 class Attendance extends Model
 {
     protected function casts(): array
@@ -55,5 +59,11 @@ class Attendance extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** Satu baris outbox notifikasi WhatsApp untuk absensi ini (bila dibuat). */
+    public function waOutbox(): HasOne
+    {
+        return $this->hasOne(WaOutbox::class);
     }
 }

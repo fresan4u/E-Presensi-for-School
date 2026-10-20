@@ -19,6 +19,8 @@ export interface FaceScanResult {
   json: string
   /** Waktu deteksi, format HH:mm:ss. */
   detectedAt: string
+  /** Foto bukti frame saat wajah terdeteksi (data URI JPEG, opsional). */
+  photo?: string
 }
 
 type FaceApiModule = typeof import('face-api.js')
@@ -77,6 +79,30 @@ export function useFaceScanner() {
   const stopTimer = () => {
     if (scanTimer) clearInterval(scanTimer)
     scanTimer = null
+  }
+
+  /**
+   * Ambil frame video terkini sebagai data URI JPEG (foto bukti absensi).
+   * Mengembalikan null bila video belum siap — perekaman foto bersifat
+   * opsional dan tidak boleh menggagalkan scan.
+   */
+  const captureFrame = (): string | null => {
+    const video = videoRef.value
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+
+    const context = canvas.getContext('2d')
+    if (!context) return null
+
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      return canvas.toDataURL('image/jpeg', 0.7)
+    } catch {
+      return null
+    }
   }
 
   const releaseStream = () => {
@@ -171,10 +197,11 @@ export function useFaceScanner() {
 
       const descriptor = Array.from(detection.descriptor) // Float32Array -> number[128]
       const json = JSON.stringify(descriptor)
+      const photo = captureFrame() ?? undefined
 
       console.log('[useFaceScanner] JSON descriptor wajah terdeteksi:', json)
 
-      result.value = { descriptor, json, detectedAt: timeNow() }
+      result.value = { descriptor, json, detectedAt: timeNow(), photo }
       status.value = 'detected'
     } catch (error) {
       stopTimer()

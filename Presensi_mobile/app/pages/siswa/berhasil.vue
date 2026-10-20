@@ -10,6 +10,8 @@ const lastScan = useState<ScanResult | null>('last-scan', () => null)
 const data = computed(() => lastScan.value?.data ?? null)
 /** false = absensi sesi ini sudah pernah tercatat sebelumnya. */
 const sudahTercatat = computed(() => (lastScan.value ? !lastScan.value.meta.created : false))
+/** Notifikasi WhatsApp (detail + foto) benar-benar masuk antrean ke wali? */
+const waQueued = computed(() => lastScan.value?.meta.wa_queued ?? false)
 
 const baris = computed(() => {
   const item = data.value
@@ -63,6 +65,15 @@ onMounted(() => {
           </div>
         </dl>
       </section>
+
+      <!-- ── Status notifikasi WhatsApp ke wali ── -->
+      <div
+        v-if="waQueued"
+        class="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800"
+      >
+        <AppIcon name="message-circle" :size="16" class="mt-0.5 shrink-0" />
+        Notifikasi WhatsApp berisi detail absensi &amp; foto bukti dikirim ke wali Anda.
+      </div>
     </main>
 
     <!-- ── Tombol kembali ke beranda ── -->

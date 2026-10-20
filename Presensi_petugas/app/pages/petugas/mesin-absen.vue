@@ -245,11 +245,18 @@
           </dl>
 
           <div
-            v-if="result.ok"
+            v-if="result.ok && result.waQueued"
             class="mt-5 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs font-medium text-emerald-800"
           >
             <MessageCircle class="h-4 w-4 shrink-0" />
-            Notifikasi WhatsApp orang tua berhasil dikirim
+            Notifikasi WhatsApp (foto + detail absensi) dikirim ke wali
+          </div>
+          <div
+            v-else-if="result.ok"
+            class="mt-5 flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-medium text-slate-600"
+          >
+            <MessageCircle class="h-4 w-4 shrink-0" />
+            Notifikasi WhatsApp tidak dikirim — kontak wali ber-consent belum tersedia atau fitur dinonaktifkan
           </div>
         </div>
 
@@ -369,6 +376,8 @@ interface ScanResultView {
   status: AttendanceStatus
   banner: string
   ok: boolean
+  /** Benar-benar masuk antrean notifikasi WhatsApp ke wali? */
+  waQueued: boolean
 }
 
 const api = useApi()
@@ -498,6 +507,7 @@ const mapScan = (res: ApiScanResult): ScanResultView => {
         : 'Absen Pulang berhasil'
       : 'Sudah tercatat sebelumnya',
     ok: res.meta.created,
+    waQueued: res.meta.wa_queued,
   }
 }
 
@@ -542,7 +552,7 @@ watch(faceResult, async (detected) => {
 
   processing.value = true
   try {
-    const res = await api.scan(detected.descriptor, session.value)
+    const res = await api.scan(detected.descriptor, session.value, detected.photo)
     result.value = mapScan(res)
 
     const item = toLogItem(res.data)

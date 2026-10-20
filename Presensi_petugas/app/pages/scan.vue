@@ -279,6 +279,26 @@ let faceapi: FaceApiModule | null = null
 let stream: MediaStream | null = null
 let scanTimer: ReturnType<typeof setInterval> | null = null
 let pendingDescriptor: number[] | null = null
+let pendingPhoto: string | null = null
+
+/** Foto bukti frame saat wajah terdeteksi (data URI JPEG, opsional). */
+const captureFrame = (video: HTMLVideoElement): string | null => {
+  if (!video.videoWidth || !video.videoHeight) return null
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+
+  const context = canvas.getContext('2d')
+  if (!context) return null
+
+  try {
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.7)
+  } catch {
+    return null
+  }
+}
 
 /* ---------- Status chip ---------- */
 const statusChip = computed(() => {
@@ -375,6 +395,7 @@ const startScan = () => {
   errorMessage.value = ''
   scanResult.value = null
   pendingDescriptor = null
+  pendingPhoto = null
   pageStatus.value = 'scanning'
   scanTimer = setInterval(runDetection, 250)
 }
@@ -396,6 +417,7 @@ const runDetection = async () => {
     // Wajah terdeteksi: berhenti memindai lalu cocokkan di server.
     stopScanTimer()
     pendingDescriptor = Array.from(result.descriptor) // Float32Array -> number[128]
+    pendingPhoto = captureFrame(video)
     await submitScan()
   } catch (error) {
     stopScanTimer()
@@ -412,7 +434,7 @@ const submitScan = async () => {
   pageStatus.value = 'submitting'
 
   try {
-    const res = await api.scan(pendingDescriptor, session.value)
+    const res = await api.scan(pendingDescriptor, session.value, pendingPhoto ?? undefined)
     scanResult.value = {
       name: res.data.student?.full_name ?? '-',
       kelas: res.data.student?.classroom?.name ?? '-',
@@ -430,6 +452,7 @@ const submitScan = async () => {
     }
   } finally {
     pendingDescriptor = null
+    pendingPhoto = null
   }
 }
 

@@ -37,15 +37,15 @@ onMounted(async () => {
 
 /** Setiap descriptor terdeteksi -> langsung dikirim untuk dicocokkan 1:1. */
 watch(faceResult, (hasil) => {
-  if (hasil && !submitting.value) kirimAbsen(hasil.descriptor)
+  if (hasil && !submitting.value) kirimAbsen(hasil.descriptor, hasil.photo)
 })
 
-async function kirimAbsen(descriptor: number[]) {
+async function kirimAbsen(descriptor: number[], photo?: string) {
   submitting.value = true
   notice.value = ''
 
   try {
-    const res = await api.studentScan(descriptor, session.value)
+    const res = await api.studentScan(descriptor, session.value, photo)
     lastScan.value = res
     stopFaceScan()
     router.push('/siswa/berhasil')
