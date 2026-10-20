@@ -2,31 +2,18 @@
 #
 # Cara pakai: Render Dashboard → New → Blueprint → pilih repo ini.
 # Frontend (3 app Nuxt) tetap dideploy terpisah di Vercel.
+#
+# Catatan: Render tidak lagi menyediakan runtime PHP native untuk service baru,
+# jadi backend dibungkus Docker (lihat backend/Dockerfile).
 services:
-  - type: php
+  - type: web_service
     name: presensi-api
-    env: php
+    runtime: docker
     plan: free
+    repo: https://github.com/fresan4u/E-Presensi-for-School
+    branch: main
     rootDir: backend
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /
-    buildCommand: >-
-      composer install --no-dev --no-interaction --prefer-dist
-      && cp .env.render .env
-      && touch database/database.sqlite
-      && (grep -q '^APP_KEY=base64' .env || php artisan key:generate --force)
-      && php artisan storage:link
-      && php artisan migrate --force
-      && php artisan db:seed --force
-    # `artisan serve` untuk request + loop `schedule:run` tiap menit
-    # (menjalankan job sapu bersih outbox WA bila fitur diaktifkan lagi).
-    startCommand: >-
-      php artisan serve --host 0.0.0.0 --port $PORT
-      &
-      while true; do php artisan schedule:run --no-interaction; sleep 60; done
-    envVars:
-      - key: APP_ENV
-        value: production
-      # Setelah tahu URL final service ini, update APP_URL di .env.render
-      # atau timpa lewat env var berikut:
-      # - key: APP_URL
-      #   value: https://presensi-api.onrender.com
+    autoDeploy: true
+    # migrate + seed + serve dijalankan dari CMD di Dockerfile ($PORT dari Render).

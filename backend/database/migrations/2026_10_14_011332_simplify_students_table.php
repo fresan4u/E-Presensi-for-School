@@ -22,6 +22,20 @@ return new class extends Migration
             $table->string('nis')->nullable(false)->change();
         });
 
+        // SQLite menolak `drop column` selama masih ada index yang menunjuk
+        // kolom tersebut ("error in index ... after drop column"). Index unik
+        // `nisn` dilepas dulu — dicek keberadaannya supaya migrasi tetap aman
+        // di database yang index-nya bernama lain (mis. MySQL lama).
+        $indexName = 'students_nisn_unique';
+
+        if (collect(Schema::getIndexes('students'))->contains(
+            fn (array $index) => $index['name'] === $indexName,
+        )) {
+            Schema::table('students', function (Blueprint $table) use ($indexName) {
+                $table->dropUnique($indexName);
+            });
+        }
+
         Schema::table('students', function (Blueprint $table) {
             $table->dropColumn(['nisn', 'gender', 'birth_date']);
         });

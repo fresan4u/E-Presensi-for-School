@@ -1,0 +1,12 @@
+# Jangan bawa artefak lokal ke image (vendor & node_modules dipasang ulang
+# di dalam container; .env lokal berisi rahasia dan tidak boleh ikut).
+.env
+.env.*
+!.env.render
+vendor
+node_modules
+database/*.sqlite
+database/*.sqlite-journal
+.phpunit.cache
+.idea
+.vscode
