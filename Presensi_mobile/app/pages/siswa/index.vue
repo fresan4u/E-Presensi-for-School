@@ -8,12 +8,45 @@ const loading = ref(true)
 const errorMessage = ref('')
 /** Absensi sesi masuk hari ini (null = belum absen). */
 const absenMasuk = ref<ApiAttendance | null>(null)
+/** Absensi sesi pulang hari ini (null = belum absen). */
+const absenPulang = ref<ApiAttendance | null>(null)
 /** Absensi terbaru (maks. 5). */
 const riwayatTerbaru = ref<ApiAttendance[]>([])
+/** Batas jam absen mandiri dari server. */
+const jendela = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
+/** Jam sekarang (untuk menentukan sesi & tombol tutup). */
+const sekarang = ref(new Date())
 
 const avatarInisial = computed(() => inisial(student.value?.full_name ?? ''))
-const hariIni = new Date()
-const tanggalHariIni = computed(() => tanggalPanjang(hariIni))
+const tanggalHariIni = computed(() => tanggalPanjang(sekarang.value))
+
+/** Menit sejak tengah malam dari string "HH:MM". */
+function keMenit(jam: string): number {
+  const [h, m] = jam.split(':').map(Number)
+  return (h ?? 0) * 60 + (m || 0)
+}
+
+/** Sesi yang sedang berlaku menurut jam server (fallback: masuk). */
+const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
+  if (!jendela.value) return 'masuk'
+  const menitSekarang = sekarang.value.getHours() * 60 + sekarang.value.getMinutes()
+  return menitSekarang >= keMenit(jendela.value.pulang_from) ? 'pulang' : 'masuk'
+})
+
+/** Absen mandiri sedang dibuka? (jendela masuk atau jendela pulang). */
+const absenDibuka = computed(() => {
+  if (!jendela.value) return true
+  const menitSekarang = sekarang.value.getHours() * 60 + sekarang.value.getMinutes()
+  return (
+    menitSekarang <= keMenit(jendela.value.self_cutoff) ||
+    menitSekarang >= keMenit(jendela.value.pulang_from)
+  )
+})
+
+/** Status absen relevan untuk kartu (sesuai jam saat ini). */
+const absenSaatIni = computed(() =>
+  sesiSaatIni.value === 'pulang' ? absenPulang.value : absenMasuk.value,
+)
 
 /** Tanggal hari ini dalam format YYYY-MM-DD (zona lokal). */
 function tanggalLokal(): string {
@@ -30,13 +63,18 @@ async function muat() {
     const profil = await fetchMe()
     if (!profil) return
 
-    const [today, recent] = await Promise.all([
-      api.studentAttendances({ date: tanggalLokal(), session: 'masuk', per_page: 1 }),
+    const tanggal = tanggalLokal()
+    const [masuk, pulang, recent, meta] = await Promise.all([
+      api.studentAttendances({ date: tanggal, session: 'masuk', per_page: 1 }),
+      api.studentAttendances({ date: tanggal, session: 'pulang', per_page: 1 }),
       api.studentAttendances({ per_page: 5 }),
+      api.meta(),
     ])
 
-    absenMasuk.value = today.data[0] ?? null
+    absenMasuk.value = masuk.data[0] ?? null
+    absenPulang.value = pulang.data[0] ?? null
     riwayatTerbaru.value = recent.data
+    jendela.value = meta.data.attendance_window
   } catch (error) {
     errorMessage.value = apiErrorMessage(error)
   } finally {
@@ -44,7 +82,19 @@ async function muat() {
   }
 }
 
-onMounted(muat)
+let jamTimer: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  muat()
+  // Perbarui jam tiap 30 detik supaya tombol tutup/buka ikut menyesuaikan.
+  jamTimer = setInterval(() => {
+    sekarang.value = new Date()
+  }, 30_000)
+})
+
+onBeforeUnmount(() => {
+  if (jamTimer) clearInterval(jamTimer)
+})
 </script>
 
 <template>
@@ -93,31 +143,33 @@ onMounted(muat)
       <!-- ── Kartu status, menempel di dasar blok (pt-6 / pb-5) ── -->
       <div class="px-5 pt-6 pb-5">
         <section class="rounded-2xl bg-white p-5 shadow-lg shadow-slate-900/15">
-          <template v-if="absenMasuk">
+          <template v-if="absenSaatIni">
             <div class="flex items-center gap-4">
               <span
                 class="flex size-12 items-center justify-center rounded-2xl"
-                :class="gayaStatus(absenMasuk.status.code).ikonBox"
+                :class="gayaStatus(absenSaatIni.status.code).ikonBox"
               >
                 <AppIcon
-                  :name="gayaStatus(absenMasuk.status.code).ikon"
+                  :name="gayaStatus(absenSaatIni.status.code).ikon"
                   :size="26"
                   :stroke-width="2"
                 />
               </span>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <h2 class="text-base font-bold text-slate-900">Sudah Absen</h2>
+                  <h2 class="text-base font-bold text-slate-900">
+                    {{ sesiSaatIni === 'pulang' ? 'Sudah Pulang' : 'Sudah Absen' }}
+                  </h2>
                   <span
                     class="rounded-full px-2 py-0.5 text-[11px] font-bold"
-                    :class="gayaStatus(absenMasuk.status.code).badge"
+                    :class="gayaStatus(absenSaatIni.status.code).badge"
                   >
-                    {{ absenMasuk.status.label }}
+                    {{ absenSaatIni.status.label }}
                   </span>
                 </div>
                 <p class="mt-0.5 text-sm text-slate-500">
-                  Jam kedatangan
-                  <span class="font-semibold text-slate-700">{{ waktu(absenMasuk.checked_at) }}</span>
+                  Jam {{ sesiSaatIni === 'pulang' ? 'kepulangan' : 'kedatangan' }}
+                  <span class="font-semibold text-slate-700">{{ waktu(absenSaatIni.checked_at) }}</span>
                 </p>
               </div>
             </div>
@@ -128,7 +180,7 @@ onMounted(muat)
               <span class="shrink-0 text-xs font-medium text-slate-500">Metode absen</span>
               <span class="flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-800">
                 <AppIcon name="user-scan" :size="16" class="text-brand-600" />
-                <span class="truncate">{{ absenMasuk.method.label }}</span>
+                <span class="truncate">{{ absenSaatIni.method.label }}</span>
               </span>
             </div>
           </template>
@@ -145,7 +197,11 @@ onMounted(muat)
                   {{ loading ? 'Memuat…' : 'Belum Absen' }}
                 </h2>
                 <p class="mt-0.5 text-sm text-slate-500">
-                  Lakukan absensi sebelum batas waktu.
+                  {{
+                    absenDibuka
+                      ? `Absen ${sesiSaatIni === 'pulang' ? 'pulang' : 'masuk'} dibuka.`
+                      : 'Absen ditutup. Hubungi petugas bila perlu.'
+                  }}
                 </p>
               </div>
             </div>
@@ -158,6 +214,7 @@ onMounted(muat)
     <div class="px-5">
       <!-- ── Tombol scan utama ── -->
       <NuxtLink
+        v-if="absenDibuka"
         to="/siswa/scan"
         class="mt-5 flex w-full items-center gap-4 rounded-2xl bg-brand-700 p-4 text-left text-white shadow-xl shadow-brand-700/25 transition active:scale-[0.98] active:bg-brand-800"
       >
@@ -165,13 +222,35 @@ onMounted(muat)
           <AppIcon name="scan-face" :size="26" />
         </span>
         <span class="min-w-0 flex-1">
-          <span class="block text-base font-bold">Scan Wajah</span>
+          <span class="block text-base font-bold">
+            Scan Wajah {{ sesiSaatIni === 'pulang' ? 'Pulang' : 'Masuk' }}
+          </span>
           <span class="mt-0.5 block text-xs text-white/70">
             Klik untuk melakukan absensi sekarang
           </span>
         </span>
         <AppIcon name="chevron-right" :size="22" class="text-white/70" />
       </NuxtLink>
+
+      <!-- Absen ditutup: tombol disabled + info jam berikutnya -->
+      <div
+        v-else
+        class="mt-5 flex w-full items-center gap-4 rounded-2xl bg-slate-100 p-4 text-left text-slate-400"
+        aria-disabled="true"
+      >
+        <span class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-slate-200/70">
+          <AppIcon name="clock" :size="26" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-base font-bold text-slate-500">Absen Ditutup</span>
+          <span class="mt-0.5 block text-xs text-slate-400">
+            <template v-if="jendela">
+              Absen masuk sampai {{ jendela.self_cutoff }}; absen pulang mulai {{ jendela.pulang_from }}.
+            </template>
+            <template v-else>Di luar jam absen mandiri.</template>
+          </span>
+        </span>
+      </div>
 
       <p
         v-if="errorMessage"

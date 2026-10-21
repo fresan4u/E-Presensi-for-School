@@ -25,6 +25,7 @@ class StudentController extends Controller
             'status',
             'enrollments.classroom.gradeLevel',
             'enrollments.classroom.major',
+            'guardians',
         ];
     }
 
@@ -69,6 +70,7 @@ class StudentController extends Controller
         ]);
 
         $this->syncEnrollment($student, $data['classroom_id'] ?? null, $data['academic_year_id'] ?? null);
+        $this->syncGuardians($student, $data['guardians'] ?? null);
 
         return (new StudentResource(
             $student->load($this->relations())->loadCount('faceDescriptors'),
@@ -96,6 +98,8 @@ class StudentController extends Controller
         if (! empty($data['classroom_id'])) {
             $this->syncEnrollment($student, $data['classroom_id'], $data['academic_year_id'] ?? null);
         }
+
+        $this->syncGuardians($student, $data['guardians'] ?? null);
 
         return new StudentResource(
             $student->load($this->relations())->loadCount('faceDescriptors'),
@@ -134,7 +138,7 @@ class StudentController extends Controller
                 continue;
             }
 
-            $record = array_combine(array_slice($header, 0, count($row)), $row) ?: [];
+            $record = array_combine(array_slice($header, 0, count($row)), array_slice($row, 0, count($header))) ?: [];
             $nis = trim((string) ($record['nis'] ?? ''));
 
             if ($nis === '') {
@@ -162,6 +166,8 @@ class StudentController extends Controller
                     ['classroom_id' => $classroomId, 'is_active' => true],
                 );
             }
+
+            $this->importGuardian($student, $record);
         }
 
         fclose($handle);
@@ -188,8 +194,70 @@ class StudentController extends Controller
         );
     }
 
+    /**
+     * Impor wali dari kolom CSV opsional.
+     *
+     * Kolom yang dibaca: `guardian_name`, `guardian_relationship`, `guardian_phone`.
+     * Baris tanpa `guardian_phone` diabaikan — wali tanpa nomor tidak berguna
+     * untuk notifikasi WhatsApp.
+     *
+     * @param  array<string, mixed>  $record
+     */
+    private function importGuardian(Student $student, array $record): void
+    {
+        $phone = trim((string) ($record['guardian_phone'] ?? ''));
+
+        if ($phone === '') {
+            return;
+        }
+
+        $student->guardians()->updateOrCreate(
+            ['phone' => $phone],
+            [
+                'name' => trim((string) ($record['guardian_name'] ?? '')) ?: 'Wali Murid',
+                'relationship' => trim((string) ($record['guardian_relationship'] ?? '')) ?: 'wali',
+                'is_primary' => true,
+                'consent_at' => now(),
+            ],
+        );
+    }
+
     private function classroomKey($gradeLevel, $major, $rombel): string
     {
         return strtoupper(trim((string) $gradeLevel)).'|'.strtoupper(trim((string) $major)).'|'.(int) $rombel;
+    }
+
+    /**
+     * Sinkronkan daftar wali murid.
+     *
+     * Semantik: field `guardians` yang dikirim berarti "ganti seluruh daftar
+     * wali". Field yang tidak dikirim (null) berarti "jangan sentuh wali yang
+     * ada" — supaya update NIS/nama tidak ikut menghapus nomor wali.
+     *
+     * @param  array<int, array<string, mixed>>|null  $guardians
+     */
+    private function syncGuardians(Student $student, ?array $guardians): void
+    {
+        if ($guardians === null) {
+            return;
+        }
+
+        $student->guardians()->delete();
+
+        foreach ($guardians as $index => $guardian) {
+            $phone = trim((string) ($guardian['phone'] ?? ''));
+
+            if ($phone === '') {
+                continue;
+            }
+
+            $student->guardians()->create([
+                'name' => trim((string) ($guardian['name'] ?? '')) ?: 'Wali Murid',
+                'relationship' => trim((string) ($guardian['relationship'] ?? '')) ?: 'wali',
+                'phone' => $phone,
+                'is_primary' => (bool) ($guardian['is_primary'] ?? $index === 0),
+                'consent_at' => now(),
+            ]);
+        }
     }
 }

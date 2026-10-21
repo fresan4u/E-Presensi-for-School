@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['nis', 'full_name', 'pin', 'status_id', 'must_change_pin'])]
+#[Fillable(['nis', 'full_name', 'pin', 'status_id', 'must_change_pin', 'pin_changed_at'])]
 #[Hidden(['pin'])]
 class Student extends Authenticatable
 {
@@ -29,6 +29,7 @@ class Student extends Authenticatable
         return [
             'pin' => 'hashed',
             'must_change_pin' => 'boolean',
+            'pin_changed_at' => 'datetime',
         ];
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ScanAttendanceRequest;
+use App\Http\Requests\ScanSelfRequest;
 use App\Http\Requests\StoreAttendanceRequest;
 use App\Http\Requests\UpdateAttendanceRequest;
 use App\Http\Resources\AttendanceResource;
@@ -222,15 +223,28 @@ class AttendanceController extends Controller
      * Descriptor wajah diverifikasi 1:1 hanya terhadap wajah terdaftar milik
      * siswa yang sedang login (token Sanctum), sehingga absensi selalu tercatat
      * atas nama pemilik akun — tidak bisa titip absen.
+     *
+     * Sesi TIDAK diambil dari klien: server yang menentukan `masuk` atau
+     * `pulang` berdasarkan jam. Di luar jendela absensi mandiri request ditolak
+     * dengan kode `attendance_closed` supaya siswa tidak bisa mengaku absen
+     * pulang pada pagi hari.
      */
-    public function scanSelf(ScanAttendanceRequest $request): JsonResponse
+    public function scanSelf(ScanSelfRequest $request): JsonResponse
     {
         $data = $request->validated();
         $at = Carbon::now();
 
+        $session = $this->resolveSession($at);
+
+        if ($session === null) {
+            return response()->json([
+                'message' => $this->closedMessage($at),
+                'code' => 'attendance_closed',
+            ], 422);
+        }
+
         /** @var Student $student */
         $student = $request->user();
-        $session = AttendanceSession::where('code', $data['session'])->firstOrFail();
 
         $match = $this->faceMatcher->verifyForStudent($student, $data['descriptor']);
 
@@ -426,5 +440,59 @@ class AttendanceController extends Controller
         // }
 
         return AttendanceStatus::where('code', 'hadir')->firstOrFail();
+    }
+
+    /**
+     * Sesi absensi mandiri berdasarkan jam server (bukan pilihan siswa).
+     *
+     *   masuk  : 00:00 s/d `self_cutoff` (07:00)
+     *   pulang : `pulang_from` (15:00) s/d 23:59
+     *
+     * Mengembalikan null saat di luar kedua jendela — pemanggil membalas 422
+     * `attendance_closed`.
+     */
+    private function resolveSession(Carbon $at): ?AttendanceSession
+    {
+        $code = $this->sessionCode($at);
+
+        if ($code === null) {
+            return null;
+        }
+
+        return AttendanceSession::where('code', $code)->first();
+    }
+
+    /**
+     * Kode sesi untuk jam tertentu, atau null bila di luar jendela absensi.
+     */
+    private function sessionCode(Carbon $at): ?string
+    {
+        $selfCutoff = Carbon::parse($at->toDateString().' '.config('presensi.attendance.self_cutoff', '07:00'));
+        $pulangFrom = Carbon::parse($at->toDateString().' '.config('presensi.attendance.pulang_from', '15:00'));
+
+        if ($at->lessThanOrEqualTo($selfCutoff)) {
+            return 'masuk';
+        }
+
+        if ($at->greaterThanOrEqualTo($pulangFrom)) {
+            return 'pulang';
+        }
+
+        return null;
+    }
+
+    /**
+     * Pesan penolakan yang menjelaskan jendela absensi berikutnya.
+     */
+    private function closedMessage(Carbon $at): string
+    {
+        $selfCutoff = config('presensi.attendance.self_cutoff', '07:00');
+        $pulangFrom = config('presensi.attendance.pulang_from', '15:00');
+
+        return sprintf(
+            'Absen mandiri ditutup. Absen masuk sampai %s; absen pulang mulai %s.',
+            $selfCutoff,
+            $pulangFrom,
+        );
     }
 }

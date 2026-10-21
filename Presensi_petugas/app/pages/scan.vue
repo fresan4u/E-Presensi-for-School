@@ -15,23 +15,36 @@
       </div>
 
       <div class="flex items-center gap-3">
-        <!-- Pilih sesi absen -->
-        <div class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+        <!-- Sesi absen: otomatis dari jam, bisa di-override petugas -->
+        <div class="flex items-center gap-2">
+          <div class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+            <button
+              v-for="opt in sessionOptions"
+              :key="opt.value"
+              type="button"
+              class="px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              :class="[
+                opt.value !== 'masuk' ? 'border-l border-gray-200' : '',
+                session === opt.value
+                  ? 'bg-emerald-900 text-white'
+                  : 'bg-white text-gray-600 hover:bg-slate-50',
+              ]"
+              :disabled="!manualSession || pageStatus === 'scanning' || pageStatus === 'submitting'"
+              @click="pilihSesi(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
           <button
-            v-for="opt in sessionOptions"
-            :key="opt.value"
             type="button"
-            class="px-3 py-1.5 text-xs font-medium transition-colors"
-            :class="[
-              opt.value !== 'masuk' ? 'border-l border-gray-200' : '',
-              session === opt.value
-                ? 'bg-emerald-900 text-white'
-                : 'bg-white text-gray-600 hover:bg-slate-50',
-            ]"
-            :disabled="pageStatus === 'scanning' || pageStatus === 'submitting'"
-            @click="session = opt.value"
+            class="rounded-md border px-2.5 py-1.5 text-[11px] font-semibold transition-colors"
+            :class="manualSession
+              ? 'border-amber-300 bg-amber-50 text-amber-800'
+              : 'border-gray-200 bg-white text-gray-500 hover:bg-slate-50'"
+            :title="manualSession ? 'Kembali ke sesi otomatis' : 'Pilih sesi manual (pulang cepat/sakit)'"
+            @click="manualSession ? kembaliOtomatis() : (manualSession = true)"
           >
-            {{ opt.label }}
+            {{ manualSession ? 'Manual' : 'Otomatis' }}
           </button>
         </div>
 
@@ -251,6 +264,10 @@ type PageStatus = 'boot' | 'ready' | 'scanning' | 'submitting' | 'detected' | 'u
 
 const api = useApi()
 const session = ref<'masuk' | 'pulang'>('masuk')
+/** Override manual: petugas memaksa sesi sendiri (kasus pulang cepat/sakit). */
+const manualSession = ref(false)
+/** Jendela absen dari server. */
+const attendanceWindow = ref<{ pulang_from: string } | null>(null)
 
 /** Konfirmasi sebelum keluar dari mode kiosk. */
 const { leaveModalOpen, requestLeave, confirmLeave, cancelLeave } = useLeaveGuard()
@@ -259,6 +276,25 @@ const sessionOptions = [
   { value: 'masuk', label: 'Masuk' },
   { value: 'pulang', label: 'Pulang' },
 ] as const
+
+/** Sesi menurut jam server (dipakai saat override manual tidak aktif). */
+const sesiOtotomatis = computed<'masuk' | 'pulang'>(() => {
+  const batas = attendanceWindow.value?.pulang_from
+  if (!batas) return 'masuk'
+  const [h, m] = batas.split(':').map(Number)
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes() >= (h ?? 0) * 60 + (m || 0) ? 'pulang' : 'masuk'
+})
+
+const pilihSesi = (next: 'masuk' | 'pulang') => {
+  session.value = next
+  manualSession.value = true
+}
+
+const kembaliOtomatis = () => {
+  manualSession.value = false
+  session.value = sesiOtotomatis.value
+}
 
 interface ScanView {
   name: string
@@ -482,7 +518,16 @@ const releaseCamera = () => {
   if (videoRef.value) videoRef.value.srcObject = null
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // Sesi awal dari jam server (override manual menyusul bila petugas pilih).
+  try {
+    const meta = await api.meta()
+    attendanceWindow.value = meta.data.attendance_window
+    if (!manualSession.value) session.value = sesiOtotomatis.value
+  } catch {
+    // Info jendela absen opsional; fallback ke 'masuk'.
+  }
+
   init()
 })
 

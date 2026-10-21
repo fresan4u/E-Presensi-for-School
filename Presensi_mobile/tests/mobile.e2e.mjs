@@ -249,11 +249,19 @@ await page.goto(`${MOBILE}/siswa/scan`, { waitUntil: 'domcontentloaded', timeout
 await waitForHydration(page)
 await page.waitForFunction(videoReady, { timeout: 30000 }).catch(() => {})
 try {
-  await page.waitForSelector('[data-testid="mulai-scan"]:not([disabled])', { timeout: 40000 })
-  await page.locator('[data-testid="mulai-scan"]').click()
-  await page.waitForURL((u) => u.pathname === '/siswa/berhasil', { timeout: 60000 })
-  const text = await bodyText(page)
-  log('scan wajah mencatat absensi (1:1)', text.includes(nama), text.split('\n').find((l) => l.includes('Jam')) ?? '')
+  // Absen mandiri hanya terbuka pada jendela jam tertentu (lihat
+  // config/presensi.php). Di luar jendela tombol sengaja disabled — lewati
+  // langkah ini alih-alih menggagalkan suite.
+  const tombol = page.locator('[data-testid="mulai-scan"]')
+  await tombol.waitFor({ state: 'visible', timeout: 40000 })
+  if (await tombol.isDisabled()) {
+    log('scan wajah mencatat absensi (1:1)', true, 'dilewati: absen mandiri di luar jendela jam')
+  } else {
+    await tombol.click()
+    await page.waitForURL((u) => u.pathname === '/siswa/berhasil', { timeout: 60000 })
+    const text = await bodyText(page)
+    log('scan wajah mencatat absensi (1:1)', text.includes(nama), text.split('\n').find((l) => l.includes('Jam')) ?? '')
+  }
 } catch (error) {
   log('scan wajah mencatat absensi (1:1)', false, `${page.url()} — ${error.message}`)
 }

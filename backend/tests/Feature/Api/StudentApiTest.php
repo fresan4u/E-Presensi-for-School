@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Classroom;
+use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -95,5 +96,72 @@ class StudentApiTest extends TestCase
             ->assertJsonPath('data.created', 2);
 
         $this->assertDatabaseHas('students', ['nis' => '9001', 'full_name' => 'Budi Santoso']);
+    }
+
+    /**
+     * Wali murid ikut dibuat saat siswa baru dan tampil di resource.
+     * `consent_at` langsung diisi supaya nomor siap dipakai notifikasi WA.
+     */
+    public function test_can_create_student_with_guardian(): void
+    {
+        $this->postJson('/api/v1/students', [
+            'nis' => '8002',
+            'full_name' => 'Rina Marlina',
+            'guardians' => [
+                ['name' => 'Ahmad', 'relationship' => 'ayah', 'phone' => '08111111111'],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.guardians.0.phone', '08111111111')
+            ->assertJsonPath('data.guardians.0.is_primary', true);
+
+        $guardian = Guardian::query()->whereHas('student', fn ($q) => $q->where('nis', '8002'))->firstOrFail();
+        $this->assertNotNull($guardian->consent_at);
+    }
+
+    /**
+     * Kirim `guardians` berarti ganti-daftar; tanpa field itu wali lama tetap
+     * utuh (update NIS/nama tidak boleh menghapus nomor wali).
+     */
+    public function test_guardian_list_is_replaced_only_when_submitted(): void
+    {
+        $student = Student::first();
+        $student->guardians()->create([
+            'name' => 'Lama', 'relationship' => 'ibu', 'phone' => '08222222222', 'consent_at' => now(),
+        ]);
+
+        // Tanpa field guardians -> tidak disentuh.
+        $this->putJson("/api/v1/students/{$student->id}", ['full_name' => 'Nama Baru'])
+            ->assertOk();
+        $this->assertDatabaseHas('guardians', ['student_id' => $student->id, 'phone' => '08222222222']);
+
+        // Dengan field guardians -> daftar lama diganti seluruhnya.
+        $this->putJson("/api/v1/students/{$student->id}", [
+            'full_name' => 'Nama Baru',
+            'guardians' => [
+                ['name' => 'Baru', 'relationship' => 'ayah', 'phone' => '08333333333'],
+            ],
+        ])->assertOk()->assertJsonPath('data.guardians.0.phone', '08333333333');
+
+        $this->assertDatabaseMissing('guardians', ['phone' => '08222222222']);
+        $this->assertDatabaseHas('guardians', ['student_id' => $student->id, 'phone' => '08333333333']);
+    }
+
+    /**
+     * Impor CSV membaca kolom wali opsional.
+     */
+    public function test_import_reads_optional_guardian_columns(): void
+    {
+        $csv = "nis,full_name,guardian_name,guardian_relationship,guardian_phone\n"
+            ."9101,Siti Aminah,Siti Rahma,ibu,08555555555\n"
+            ."9102,Andi Wijaya,,,,\n";
+
+        $file = UploadedFile::fake()->createWithContent('wali.csv', $csv);
+
+        $this->post('/api/v1/students/import', ['file' => $file], ['Accept' => 'application/json'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('guardians', ['name' => 'Siti Rahma', 'phone' => '08555555555']);
+        // Baris tanpa nomor wali tidak membuat baris guardian kosong.
+        $this->assertDatabaseMissing('guardians', ['student_id' => Student::where('nis', '9102')->firstOrFail()->id]);
     }
 }

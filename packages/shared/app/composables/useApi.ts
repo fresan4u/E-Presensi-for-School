@@ -53,12 +53,15 @@ export interface ApiStudent {
   full_name: string
   status: ApiLookup | null
   classroom: ApiClassroom | null
+  guardians?: ApiStudentGuardian[]
   face_descriptors_count: number | null
 }
 
 /** Profil siswa untuk portal mobile (login NIS + PIN). */
 export interface ApiStudentProfile extends ApiStudent {
   must_change_pin: boolean
+  /** PIN hanya bisa diganti sekali; `false` = gerbang sudah tertutup. */
+  can_change_pin: boolean
 }
 
 export interface StudentAuthResult {
@@ -113,7 +116,29 @@ export interface ApiMeta {
   attendance_statuses: ApiLookup[]
   attendance_methods: ApiLookup[]
   attendance_sessions: Array<ApiLookup & { boundary_time: string | null }>
+  attendance_window: {
+    self_cutoff: string
+    handover_at: string
+    pulang_from: string
+  }
   face: ApiFaceMeta
+}
+
+export interface ApiStudentGuardian {
+  id: number
+  name: string
+  relationship: string | null
+  phone: string
+  is_primary: boolean
+  consent_at: string | null
+  biometric_consent_at: string | null
+}
+
+export interface GuardianPayload {
+  name?: string | null
+  relationship?: string | null
+  phone: string
+  is_primary?: boolean
 }
 
 export interface StudentPayload {
@@ -122,6 +147,7 @@ export interface StudentPayload {
   status?: string
   classroom_id?: number | null
   academic_year_id?: number | null
+  guardians?: GuardianPayload[]
 }
 
 export interface StudentQuery {
@@ -339,10 +365,10 @@ export const useApi = () => {
     studentLogout: () => client<{ message: string }>('/student/logout', { method: 'POST' }),
     studentAttendances: (query: Record<string, unknown> = {}) =>
       client<Paginated<ApiAttendance>>('/student/attendances', { query }),
-    studentScan: (descriptor: number[], session: 'masuk' | 'pulang', photo?: string) =>
+    studentScan: (descriptor: number[], photo?: string) =>
       client<ScanResult>('/student/attendance/scan', {
         method: 'POST',
-        body: { descriptor, session, ...(photo ? { photo } : {}) },
+        body: { descriptor, ...(photo ? { photo } : {}) },
       }),
   }
 }

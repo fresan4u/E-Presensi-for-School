@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['student_id', 'name', 'relationship', 'phone', 'is_primary', 'consent_at'])]
+#[Fillable(['student_id', 'name', 'relationship', 'phone', 'is_primary', 'consent_at', 'biometric_consent_at'])]
 class Guardian extends Model
 {
     /** @use HasFactory<GuardianFactory> */
@@ -19,6 +19,7 @@ class Guardian extends Model
         return [
             'is_primary' => 'boolean',
             'consent_at' => 'datetime',
+            'biometric_consent_at' => 'datetime',
         ];
     }
 

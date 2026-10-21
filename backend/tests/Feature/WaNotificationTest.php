@@ -84,6 +84,7 @@ class WaNotificationTest extends TestCase
         Http::fake(['*' => Http::response(['wamid' => 'WAMID.ABC'], 200)]);
 
         $student = Student::first();
+        $student->guardians()->delete();
         $this->consentingGuardianFor($student, '081200000001');
         $this->registerFaceFor($student);
 
@@ -167,6 +168,9 @@ class WaNotificationTest extends TestCase
         Http::fake();
 
         $student = Student::first();
+        // Buang wali demo hasil seeder agar kasus "tidak ada wali ber-consent"
+        // teruji bersih.
+        $student->guardians()->delete();
         Guardian::factory()->for($student)->withoutConsent()->create(['phone' => '081200000002']);
         $this->registerFaceFor($student);
 
@@ -189,6 +193,7 @@ class WaNotificationTest extends TestCase
         Http::fake();
 
         $student = Student::first();
+        $student->guardians()->delete();
         $this->consentingGuardianFor($student, '123');
         $this->registerFaceFor($student);
 
@@ -333,8 +338,11 @@ class WaNotificationTest extends TestCase
         Storage::fake('local');
         $this->enableWa();
         Http::fake(['*' => Http::response(['wamid' => 'WAMID.SELF'], 200)]);
+        // Sore hari: server menentukan sesi pulang sendiri dari jam.
+        $this->travelTo(now()->setTime(16, 0));
 
         $student = Student::first();
+        $student->guardians()->delete();
         $this->consentingGuardianFor($student, '081200000009');
         $this->registerFaceFor($student, 0.9);
 
@@ -349,9 +357,10 @@ class WaNotificationTest extends TestCase
 
         $this->postJson('/api/v1/student/attendance/scan', [
             'descriptor' => $this->descriptor(0.9),
-            'session' => 'pulang',
             'photo' => $this->photoUri('foto-pulang'),
         ])->assertCreated()->assertJsonPath('meta.wa_queued', true);
+
+        $this->assertSame('pulang', Attendance::firstOrFail()->session->code);
 
         $outbox = WaOutbox::firstOrFail();
         $this->assertSame(WaOutbox::STATUS_SENT, $outbox->status);

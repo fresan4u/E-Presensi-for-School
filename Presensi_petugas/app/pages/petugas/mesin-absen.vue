@@ -16,27 +16,44 @@
 
       <div class="flex flex-wrap items-center justify-between gap-4 sm:justify-end">
         <div class="flex flex-col gap-1">
-          <!-- Toggle sesi: masuk / pulang -->
-          <div class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+          <!-- Sesi otomatis dari jam; petugas bisa override manual bila perlu -->
+          <div class="flex items-center gap-2">
+            <div class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+              <button
+                v-for="opt in sessionOptions"
+                :key="opt.value"
+                type="button"
+                class="px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!manualSession"
+                :class="[
+                  opt.value !== 'masuk' ? 'border-l border-gray-200' : '',
+                  session === opt.value
+                    ? 'bg-emerald-900 text-white'
+                    : 'bg-white text-gray-600 hover:bg-slate-50',
+                ]"
+                @click="switchSession(opt.value)"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
             <button
-              v-for="opt in sessionOptions"
-              :key="opt.value"
               type="button"
-              class="px-4 py-2 text-sm font-medium transition-colors"
-              :class="[
-                opt.value !== 'masuk' ? 'border-l border-gray-200' : '',
-                session === opt.value
-                  ? 'bg-emerald-900 text-white'
-                  : 'bg-white text-gray-600 hover:bg-slate-50',
-              ]"
-              @click="switchSession(opt.value)"
+              class="rounded-md border px-3 py-2 text-xs font-semibold transition-colors"
+              :class="manualSession
+                ? 'border-amber-300 bg-amber-50 text-amber-800'
+                : 'border-gray-200 bg-white text-gray-500 hover:bg-slate-50'"
+              :title="manualSession ? 'Kembali ke sesi otomatis' : 'Pilih sesi manual (pulang cepat/sakit)'"
+              @click="toggleManualSession"
             >
-              {{ opt.label }}
+              {{ manualSession ? 'Manual' : 'Otomatis' }}
             </button>
           </div>
           <p class="flex items-center gap-1.5 text-xs font-medium text-red-600">
             <Clock class="h-3.5 w-3.5" />
-            Batas absen {{ session === 'masuk' ? 'masuk' : 'pulang' }} {{ boundaryTime }}
+            <template v-if="manualSession">Override manual petugas</template>
+            <template v-else>
+              Sesi otomatis · batas {{ session === 'masuk' ? 'masuk' : 'pulang' }} {{ boundaryTime }}
+            </template>
           </p>
         </div>
 
@@ -408,6 +425,8 @@ const {
 
 const mode = ref<ScanMode>('face')
 const session = ref<Session>('masuk')
+/** Override manual: petugas memaksa sesi sendiri (kasus pulang cepat/sakit). */
+const manualSession = ref(false)
 const logs = ref<LogItem[]>([])
 const result = ref<ScanResultView | null>(null)
 const scanError = ref('')
@@ -415,6 +434,8 @@ const fingerprintScanning = ref(false)
 const processing = ref(false)
 const autoScan = ref(true)
 const boundaryMap = ref<Record<Session, string>>({ masuk: '--:--', pulang: '--:--' })
+/** Jendela absen dari server (batas jam). */
+const window = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
 const now = ref(new Date())
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -449,6 +470,29 @@ const longDateFormat = new Intl.DateTimeFormat('id-ID', {
 const clockTime = computed(() => clockFormat.format(now.value))
 const todayLabel = computed(() => dateFormat.format(now.value))
 const boundaryTime = computed(() => boundaryMap.value[session.value])
+
+/** Menit sejak tengah malam dari "HH:MM". */
+const keMenit = (jam: string) => {
+  const [h, m] = jam.split(':').map(Number)
+  return (h ?? 0) * 60 + (m || 0)
+}
+
+/** Sesi menurut jam server (dipakai saat override manual tidak aktif). */
+const sesiOtotomatis = computed<Session>(() => {
+  const menitSekarang = now.value.getHours() * 60 + now.value.getMinutes()
+  const pulangFrom = window.value ? keMenit(window.value.pulang_from) : 15 * 60
+  return menitSekarang >= pulangFrom ? 'pulang' : 'masuk'
+})
+
+/** Sinkronkan sesi dari jam selama petugas belum mengaktifkan override. */
+watch(
+  sesiOtotomatis,
+  (next) => {
+    if (manualSession.value || next === session.value) return
+    session.value = next
+    loadHistory()
+  },
+)
 
 const initial = (name: string) => name.charAt(0).toUpperCase()
 
@@ -521,6 +565,9 @@ const loadBoundary = async () => {
       }
     }
     boundaryMap.value = map
+    window.value = res.data.attendance_window
+    // Set sesi awal dari jam server (sebelum override manual menyala).
+    session.value = sesiOtotomatis.value
   } catch {
     // Info batas absen opsional; abaikan bila gagal.
   }
@@ -649,6 +696,18 @@ const switchSession = async (next: Session) => {
   scanError.value = ''
   result.value = null
   await loadHistory()
+}
+
+/**
+ * Aktifkan/nonaktifkan override manual. Saat dimatikan, sesi kembali mengikuti
+ * jam server supaya alur normal tetap otomatis.
+ */
+const toggleManualSession = () => {
+  manualSession.value = !manualSession.value
+  if (!manualSession.value && sesiOtotomatis.value !== session.value) {
+    session.value = sesiOtotomatis.value
+    loadHistory()
+  }
 }
 
 /* ---------- Lifecycle ---------- */

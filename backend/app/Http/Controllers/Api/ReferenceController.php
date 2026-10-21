@@ -49,6 +49,11 @@ class ReferenceController extends Controller
                 'attendance_statuses' => AttendanceStatus::orderBy('id')->get(['id', 'code', 'label']),
                 'attendance_methods' => AttendanceMethod::orderBy('id')->get(['id', 'code', 'label']),
                 'attendance_sessions' => AttendanceSession::orderBy('id')->get(['id', 'code', 'label', 'boundary_time']),
+                'attendance_window' => [
+                    'self_cutoff' => config('presensi.attendance.self_cutoff'),
+                    'handover_at' => config('presensi.attendance.handover_at'),
+                    'pulang_from' => config('presensi.attendance.pulang_from'),
+                ],
                 'face' => [
                     'samples_per_student' => (int) config('face.samples_per_student', 3),
                     'descriptor_length' => (int) config('face.descriptor_length', 128),

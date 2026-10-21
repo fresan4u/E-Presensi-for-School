@@ -166,6 +166,9 @@ class AttendanceApiTest extends TestCase
 
     public function test_self_scan_records_attendance_for_the_logged_in_student_only(): void
     {
+        // Jendela absensi mandiri sesi masuk (lihat config presensi.attendance).
+        $this->travelTo(now()->setTime(6, 30));
+
         $a = Student::factory()->create();
         $b = Student::factory()->create();
 
@@ -179,17 +182,79 @@ class AttendanceApiTest extends TestCase
         // B login tetapi memakai wajah A -> ditolak (1:1, tidak bisa titip absen).
         $this->postJson('/api/v1/student/attendance/scan', [
             'descriptor' => $this->descriptor(0.5),
-            'session' => 'masuk',
         ])->assertStatus(404)->assertJsonPath('code', 'face_not_recognized');
 
-        // Wajah B sendiri -> tercatat atas nama B.
+        // Wajah B sendiri -> tercatat atas nama B, sesi ditentukan server (pagi = masuk).
         $this->postJson('/api/v1/student/attendance/scan', [
             'descriptor' => $this->descriptor(0.9),
-            'session' => 'masuk',
-        ])->assertCreated()->assertJsonPath('data.student.id', $b->id);
+        ])->assertCreated()
+            ->assertJsonPath('data.student.id', $b->id)
+            ->assertJsonPath('data.session.code', 'masuk');
 
         $this->assertDatabaseHas('attendances', ['student_id' => $b->id]);
         $this->assertDatabaseMissing('attendances', ['student_id' => $a->id]);
+    }
+
+    /**
+     * Sesi tidak dipilih siswa: kirim `session` apa pun diabaikan, server
+     * yang menentukan dari jam.
+     */
+    public function test_self_scan_ignores_client_session_and_resolves_from_clock(): void
+    {
+        $this->travelTo(now()->setTime(16, 0));
+
+        $student = Student::first();
+        $this->postJson("/api/v1/students/{$student->id}/face-descriptors", ['descriptor' => $this->descriptor(0.5)])
+            ->assertCreated();
+
+        $this->loginAsStudent($student);
+
+        // Mengaku 'masuk' pada sore hari tetap tercatat 'pulang'.
+        $this->postJson('/api/v1/student/attendance/scan', [
+            'descriptor' => $this->descriptor(0.5),
+            'session' => 'masuk',
+        ])->assertCreated()->assertJsonPath('data.session.code', 'pulang');
+    }
+
+    /**
+     * Di luar jendela (antara sesi masuk & pulang) absen mandiri ditolak.
+     */
+    public function test_self_scan_is_rejected_outside_attendance_window(): void
+    {
+        $this->travelTo(now()->setTime(9, 0));
+
+        $student = Student::first();
+        $this->postJson("/api/v1/students/{$student->id}/face-descriptors", ['descriptor' => $this->descriptor(0.5)])
+            ->assertCreated();
+
+        $this->loginAsStudent($student);
+
+        $this->postJson('/api/v1/student/attendance/scan', [
+            'descriptor' => $this->descriptor(0.5),
+        ])->assertStatus(422)->assertJsonPath('code', 'attendance_closed');
+
+        $this->assertDatabaseCount('attendances', 0);
+    }
+
+    /**
+     * Tepat batas `self_cutoff` masih tercatat; lewat sedikit pun ditutup.
+     */
+    public function test_self_scan_window_closes_at_configured_cutoff(): void
+    {
+        $student = Student::first();
+        $this->postJson("/api/v1/students/{$student->id}/face-descriptors", ['descriptor' => $this->descriptor(0.5)])
+            ->assertCreated();
+        $this->loginAsStudent($student);
+
+        $this->travelTo(now()->setTime(7, 0));
+        $this->postJson('/api/v1/student/attendance/scan', [
+            'descriptor' => $this->descriptor(0.5),
+        ])->assertCreated();
+
+        $this->travelTo(now()->setTime(7, 1));
+        $this->postJson('/api/v1/student/attendance/scan', [
+            'descriptor' => $this->descriptor(0.5),
+        ])->assertStatus(422)->assertJsonPath('code', 'attendance_closed');
     }
 
     public function test_student_attendances_requires_authentication(): void

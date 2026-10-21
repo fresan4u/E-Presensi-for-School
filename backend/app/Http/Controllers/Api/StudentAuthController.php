@@ -70,6 +70,16 @@ class StudentAuthController extends Controller
         $student = $request->user();
         $data = $request->validated();
 
+        // PIN hanya boleh diganti SEKALI (saat login pertama, ketika masih PIN
+        // bawaan). Setelah `pin_changed_at` terisi, endpoint ini tertutup
+        // permanen supaya siswa tidak bisa mengganti PIN berulang kali.
+        if ($student->pin_changed_at !== null) {
+            return response()->json([
+                'message' => 'PIN hanya dapat diganti sekali dan sudah pernah diubah.',
+                'code' => 'pin_already_changed',
+            ], 403);
+        }
+
         if (! Hash::check($data['current_pin'], $student->pin)) {
             return response()->json(['message' => 'PIN saat ini salah.'], 422);
         }
@@ -78,7 +88,11 @@ class StudentAuthController extends Controller
             return response()->json(['message' => 'PIN baru tidak boleh sama dengan PIN lama.'], 422);
         }
 
-        $student->update(['pin' => $data['pin'], 'must_change_pin' => false]);
+        $student->update([
+            'pin' => $data['pin'],
+            'must_change_pin' => false,
+            'pin_changed_at' => now(),
+        ]);
 
         return response()->json([
             'message' => 'PIN berhasil diperbarui.',

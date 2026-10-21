@@ -11,6 +11,9 @@ const errorMessage = ref('')
 
 const wajib = computed(() => Boolean(student.value?.must_change_pin))
 
+/** PIN hanya bisa diganti sekali: `can_change_pin` dari server. */
+const bisaGanti = computed(() => student.value?.can_change_pin !== false)
+
 const bisaSubmit = computed(
   () =>
     form.current_pin.length > 0 &&
@@ -54,20 +57,39 @@ async function onKeluar() {
       </div>
 
       <h1 class="mt-8 text-3xl font-extrabold tracking-tight text-white">
-        {{ wajib ? 'Ganti PIN' : 'Ubah PIN' }}
+        {{ wajib ? 'Ganti PIN' : 'PIN Terkunci' }}
       </h1>
       <p class="mt-2 max-w-[18rem] text-sm leading-relaxed text-white/70">
         {{
           wajib
             ? 'Demi keamanan, ganti PIN bawaan Anda sebelum mulai menggunakan aplikasi.'
-            : 'Perbarui PIN rahasia akun Anda.'
+            : 'PIN hanya dapat diganti sekali dan sudah pernah diubah.'
         }}
       </p>
     </div>
 
     <!-- ── Kartu form ── -->
     <div class="-mt-20 px-5 pb-10">
-      <div class="rounded-2xl bg-white p-6 shadow-lg shadow-slate-900/10">
+      <!-- Sudah pernah ganti: form disembunyikan, tampil info terkunci -->
+      <div
+        v-if="!bisaGanti && !wajib"
+        class="rounded-2xl bg-white p-6 text-center shadow-lg shadow-slate-900/10"
+      >
+        <span class="mx-auto flex size-14 items-center justify-center rounded-2xl bg-slate-100">
+          <AppIcon name="lock" :size="28" class="text-slate-400" />
+        </span>
+        <h2 class="mt-4 text-lg font-bold text-slate-900">PIN Sudah Diganti</h2>
+        <p class="mt-2 text-sm text-slate-500">
+          Untuk menjaga keamanan, PIN hanya bisa diganti satu kali saat login pertama.
+          Hubungi petugas bila Anda lupa PIN.
+        </p>
+        <NuxtLink to="/siswa/profil" class="btn-primary mt-6">
+          <AppIcon name="chevron-left" :size="20" />
+          <span>Kembali ke Profil</span>
+        </NuxtLink>
+      </div>
+
+      <div v-else class="rounded-2xl bg-white p-6 shadow-lg shadow-slate-900/10">
         <h2 class="text-lg font-bold text-slate-900">PIN Baru</h2>
         <p class="mt-1 text-sm text-slate-400">Minimal 4 karakter dan mudah Anda ingat.</p>
 

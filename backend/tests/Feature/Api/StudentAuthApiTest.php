@@ -5,6 +5,7 @@ namespace Tests\Feature\Api;
 use App\Models\Student;
 use App\Models\StudentStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class StudentAuthApiTest extends TestCase
@@ -122,6 +123,36 @@ class StudentAuthApiTest extends TestCase
             'pin' => '1111',
             'pin_confirmation' => '1111',
         ])->assertStatus(422);
+    }
+
+    /**
+     * PIN hanya bisa diganti SEKALI. Percobaan kedua ditolak permanen (403)
+     * meski PIN lama diketahui.
+     */
+    public function test_update_pin_is_allowed_only_once(): void
+    {
+        Student::factory()->create(['nis' => '2024009']);
+        $token = $this->login('2024009', '2024009');
+
+        $this->withToken($token)->getJson('/api/v1/student/me')
+            ->assertOk()
+            ->assertJsonPath('data.can_change_pin', true);
+
+        $this->withToken($token)->putJson('/api/v1/student/pin', [
+            'current_pin' => '2024009',
+            'pin' => '4321',
+            'pin_confirmation' => '4321',
+        ])->assertOk()->assertJsonPath('data.can_change_pin', false);
+
+        // Percobaan kedua: tetap ditolak walaupun PIN saat ini benar.
+        $this->withToken($token)->putJson('/api/v1/student/pin', [
+            'current_pin' => '4321',
+            'pin' => '5678',
+            'pin_confirmation' => '5678',
+        ])->assertStatus(403)->assertJsonPath('code', 'pin_already_changed');
+
+        // PIN seharusnya tidak berubah oleh percobaan kedua yang ditolak.
+        $this->assertTrue(Hash::check('4321', Student::where('nis', '2024009')->firstOrFail()->pin));
     }
 
     public function test_logout_revokes_token(): void

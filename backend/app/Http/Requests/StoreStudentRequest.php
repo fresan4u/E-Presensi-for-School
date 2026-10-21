@@ -19,6 +19,11 @@ class StoreStudentRequest extends FormRequest
             'status' => ['nullable', 'in:aktif,non_aktif'],
             'classroom_id' => ['nullable', 'integer', 'exists:classrooms,id'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'guardians' => ['sometimes', 'array', 'max:5'],
+            'guardians.*.name' => ['nullable', 'string', 'max:100'],
+            'guardians.*.relationship' => ['nullable', 'string', 'max:50'],
+            'guardians.*.phone' => ['required', 'string', 'max:25'],
+            'guardians.*.is_primary' => ['nullable', 'boolean'],
         ];
     }
 }

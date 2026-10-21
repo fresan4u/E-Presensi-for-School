@@ -192,6 +192,37 @@
             <option value="non_aktif">Non Aktif</option>
           </select>
         </label>
+
+        <!-- Nomor wali murid: dipakai WaNotifier untuk kirim notifikasi absensi -->
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-800">Nama Wali</span>
+          <input
+            v-model="form.guardian_name"
+            type="text"
+            class="input"
+            placeholder="Nama orang tua / wali"
+          />
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-800">Hubungan</span>
+          <select v-model="form.guardian_relationship" class="input">
+            <option value="ayah">Ayah</option>
+            <option value="ibu">Ibu</option>
+            <option value="wali">Wali</option>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5 sm:col-span-2">
+          <span class="text-sm font-medium text-slate-800">Nomor WhatsApp Wali</span>
+          <input
+            v-model="form.guardian_phone"
+            type="tel"
+            class="input"
+            placeholder="08xxxxxxxxxx"
+          />
+          <span class="text-xs text-slate-400">
+            Kosongkan bila belum ada. Nomor ini menerima notifikasi absensi (teks + foto).
+          </span>
+        </label>
       </div>
     </modal>
   </div>
@@ -302,6 +333,9 @@ const form = reactive({
   full_name: '',
   classroom_id: null as number | null,
   status: 'aktif',
+  guardian_name: '',
+  guardian_relationship: 'ayah',
+  guardian_phone: '',
 })
 
 const openCreate = () => {
@@ -310,6 +344,9 @@ const openCreate = () => {
     full_name: '',
     classroom_id: null,
     status: 'aktif',
+    guardian_name: '',
+    guardian_relationship: 'ayah',
+    guardian_phone: '',
   })
   isFormOpen.value = true
 }
@@ -317,11 +354,26 @@ const openCreate = () => {
 const submitStudent = async () => {
   savingStudent.value = true
   try {
+    const phone = form.guardian_phone.trim()
+
     await api.createStudent({
       nis: form.nis.trim(),
       full_name: form.full_name.trim(),
       classroom_id: form.classroom_id,
       status: form.status,
+      // Wali hanya dikirim bila nomornya diisi.
+      ...(phone
+        ? {
+            guardians: [
+              {
+                name: form.guardian_name.trim() || null,
+                relationship: form.guardian_relationship,
+                phone,
+                is_primary: true,
+              },
+            ],
+          }
+        : {}),
     })
     isFormOpen.value = false
     showNotice('success', 'Siswa baru berhasil ditambahkan.')

@@ -15,14 +15,30 @@ const {
   stopScan: stopFaceScan,
 } = useFaceScanner()
 
-/** Sesi yang sedang diabsen. */
-const session = ref<'masuk' | 'pulang'>('masuk')
 const submitting = ref(false)
 const notice = ref('')
 const showHelp = ref(false)
+/** Absen mandiri ditolak server (di luar jendela jam). */
+const closed = ref(false)
+/** Batas jam dari server, untuk label sesi & pesan. */
+const jendela = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
 
 /** Hasil scan terakhir (dibaca halaman berhasil). */
 const lastScan = useState<ScanResult | null>('last-scan', () => null)
+
+/** Sesi ditentukan server dari jam; label ini hanya untuk tampilan. */
+const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
+  if (!jendela.value) return 'masuk'
+  const now = new Date()
+  const menitSekarang = now.getHours() * 60 + now.getMinutes()
+  const menit = (jam: string) => {
+    const [h, m] = jam.split(':').map(Number)
+    return (h ?? 0) * 60 + (m || 0)
+  }
+  return menitSekarang >= menit(jendela.value.pulang_from) ? 'pulang' : 'masuk'
+})
+
+const labelSesi = computed(() => (sesiSaatIni.value === 'pulang' ? 'Absen Pulang' : 'Absen Masuk'))
 
 // Jangan keluar aplikasi jika tidak ada history (mis. dibuka langsung via URL).
 function goBack() {
@@ -32,12 +48,21 @@ function goBack() {
 
 onMounted(async () => {
   fetchMe().catch(() => {})
+
+  // Batas jam absen dari server (sumber kebenaran) untuk label & pesan.
+  try {
+    const meta = await api.meta()
+    jendela.value = meta.data.attendance_window
+  } catch {
+    // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.
+  }
+
   await initFace()
 })
 
 /** Setiap descriptor terdeteksi -> langsung dikirim untuk dicocokkan 1:1. */
 watch(faceResult, (hasil) => {
-  if (hasil && !submitting.value) kirimAbsen(hasil.descriptor, hasil.photo)
+  if (hasil && !submitting.value && !closed.value) kirimAbsen(hasil.descriptor, hasil.photo)
 })
 
 async function kirimAbsen(descriptor: number[], photo?: string) {
@@ -45,7 +70,8 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
   notice.value = ''
 
   try {
-    const res = await api.studentScan(descriptor, session.value, photo)
+    // Sesi TIDAK dikirim: server menentukan masuk/pulang dari jam.
+    const res = await api.studentScan(descriptor, photo)
     lastScan.value = res
     stopFaceScan()
     router.push('/siswa/berhasil')
@@ -55,6 +81,14 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
     if (kode === 'face_not_recognized') {
       stopFaceScan()
       router.push('/siswa/gagal')
+      return
+    }
+
+    if (kode === 'attendance_closed') {
+      closed.value = true
+      stopFaceScan()
+      notice.value = apiErrorMessage(error)
+      submitting.value = false
       return
     }
 
@@ -108,20 +142,17 @@ const statusText = computed(() => {
       </button>
     </header>
 
-    <!-- ── Pilih sesi ── -->
+    <!-- ── Info sesi (ditentukan server dari jam) ── -->
     <div class="px-5 pt-4">
-      <div class="flex rounded-xl bg-slate-100 p-1">
-        <button
-          v-for="opt in [{ value: 'masuk', label: 'Absen Masuk' }, { value: 'pulang', label: 'Absen Pulang' }]"
-          :key="opt.value"
-          type="button"
-          :data-testid="`session-${opt.value}`"
-          class="flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition"
-          :class="session === opt.value ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500'"
-          @click="session = opt.value as 'masuk' | 'pulang'"
-        >
-          {{ opt.label }}
-        </button>
+      <div class="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5">
+        <AppIcon name="clock" :size="16" class="text-brand-600" />
+        <span class="text-sm font-semibold text-slate-700">
+          {{ closed ? 'Absen ditutup' : labelSesi }}
+        </span>
+        <span v-if="jendela" class="text-xs text-slate-400">
+          · {{ sesiSaatIni === 'pulang' ? 'mulai' : 'sampai' }}
+          {{ sesiSaatIni === 'pulang' ? jendela.pulang_from : jendela.self_cutoff }}
+        </span>
       </div>
     </div>
 
@@ -212,11 +243,11 @@ const statusText = computed(() => {
         type="button"
         data-testid="mulai-scan"
         class="btn-primary mt-5 mb-6"
-        :disabled="faceStatus !== 'ready' || submitting"
+        :disabled="faceStatus !== 'ready' || submitting || closed"
         @click="startFaceScan"
       >
         <AppIcon name="scan-face" :size="20" />
-        <span>{{ faceStatus === 'scanning' || submitting ? 'Memindai…' : 'Mulai Scan' }}</span>
+        <span>{{ closed ? 'Absen Ditutup' : faceStatus === 'scanning' || submitting ? 'Memindai…' : 'Mulai Scan' }}</span>
       </button>
     </main>
 

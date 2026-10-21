@@ -148,16 +148,39 @@ Descriptor disimpan sebagai **kolom JSON per sampel** di `student_face_descripto
 ## Alur Absensi (app Petugas, `:3001`)
 
 - Kiosk publik `/scan` (tanpa login) atau mesin operasional petugas `/petugas/mesin-absen`
-  (halaman layar penuh, wajib login, mendukung sesi masuk & pulang). Keduanya mode kiosk:
-  bila ditinggalkan (tombol **Keluar**, tombol back, atau tutup/reload tab) akan muncul
+  (halaman layar penuh, wajib login). Keduanya mode kiosk: bila ditinggalkan
+  (tombol **Keluar**, tombol back, atau tutup/reload tab) akan muncul
   konfirmasi agar pemindaian tidak terhenti tanpa sengaja.
+- **Sesi ditentukan otomatis dari jam** (bukan dipilih manual): sebelum
+  `pulang_from` (15:00) sesi `masuk`, sesudahnya `pulang`. Petugas tetap bisa
+  menekan tombol **Otomatis/Manual** untuk override — mis. mencatat pulang cepat
+  karena sakit di luar jam pulang.
 - Browser mengirim descriptor ke `POST /api/v1/attendance/scan`.
 - Server mencocokkan dengan **jarak Euclidean**, threshold `config('face.match_threshold')` (0.6),
   hanya untuk siswa berstatus **aktif**.
 - Hasil: `404 face_not_recognized` bila tidak ada yang cocok; selain itu record
   absensi dibuat dengan `firstOrCreate` (idempotent per `student + tanggal + sesi`).
-- Status sesi `masuk`: **terlambat** bila melewati `boundary_time` sesi (seed 07:30), selain itu **hadir**.
-  Sesi `pulang`: **hadir**.
+- Status sesi: **mode demo** — setiap absensi tercatat **hadir**. Logika
+  `terlambat` berbasis `boundary_time` sengaja dikomentari di
+  `AttendanceController::resolveStatus` sampai demo selesai.
+
+## Jendela Absen Mandiri (app Siswa)
+
+Absen mandiri lewat HP hanya terbuka pada dua jendela (`config/presensi.php` →
+`attendance`):
+
+| Jam | Sesi | Keterangan |
+| --- | ---- | ---------- |
+| 00:00 – **07:00** (`self_cutoff`) | masuk | Siswa scan dari HP |
+| **06:40** (`handover_at`) – 07:00 | masuk | Zona serah-terima ke petugas |
+| > 07:00 dan < **15:00** | — | Ditutup; siswa yang perlu absen dibantu petugas |
+| **15:00** (`pulang_from`) – 23:59 | pulang | Siswa scan dari HP |
+
+Di luar jendela tersebut `POST /student/attendance/scan` membalas `422`
+berkode `attendance_closed`. Sesi **tidak dikirim klien**: server yang
+menentukan `masuk`/`pulang` dari jam, sehingga siswa tidak bisa mengaku absen
+pulang pada pagi hari. Petugas selalu bisa mencatat manual lewat
+`POST /attendances` (atau override di mesin absen).
 
 ## App Siswa (`Presensi_mobile`, `:3002`) — Level 2
 
@@ -167,10 +190,15 @@ dengan admin/petugas) dan kamera nyata lewat `useFaceScanner`.
 
 - **Login: NIS + PIN.** NIS adalah satu-satunya nomor identitas.
 - **PIN awal = NIS.** Setelah login pertama siswa **wajib mengganti PIN**
-  (diarahkan otomatis ke halaman Ganti PIN); PIN juga bisa diubah dari Profil.
+  (diarahkan otomatis ke halaman Ganti PIN). **PIN hanya bisa diganti sekali**:
+  setelah itu `PUT /student/pin` menolak permanen (`403 pin_already_changed`)
+  dan menu Ganti PIN berubah menjadi info terkunci. Lupa PIN = petugas/admin
+  mengubah langsung di database (tidak ada reset mandiri).
 - **Wajah = verifikasi kehadiran, bukan login.** Scan wajah dicocokkan **1:1
   hanya dengan wajah terdaftar milik akun yang sedang login**, sehingga tidak
   bisa titip absen.
+- **Sesi masuk/pulang otomatis**: tidak ada lagi toggle di HP; tombol scan
+  otomatis menyesuaikan sesi dan dinonaktifkan bila di luar jendela jam.
 - Sesi login memakai token Sanctum di cookie `presensi-student-token`
   (dipasang otomatis sebagai header `Authorization` oleh `useApi`).
 - Data siswa ditampilkan minimal: **NIS, nama lengkap, kelas**.
@@ -183,15 +211,17 @@ Endpoint: `POST /api/v1/students/import` (multipart, field `file`, `csv`/`txt`).
 Header (huruf kecil, urutan bebas setelah `nis`):
 
 ```csv
-nis,full_name,grade_level,major,rombel,status
-9001,Budi Santoso,X,RPL,1,aktif
-9002,Siti Aminah,XI,DKV,2,aktif
+nis,full_name,grade_level,major,rombel,status,guardian_name,guardian_relationship,guardian_phone
+9001,Budi Santoso,X,RPL,1,aktif,Budi Senior,ayah,081234567890
+9002,Siti Aminah,XI,DKV,2,aktif,,,
 ```
 
 - `nis` **wajib** dan unik; baris tanpa `nis` dilewati dan dicatat di `errors`.
 - Kelas dibentuk dari kunci `grade_level|major|rombel`, mis. `X|RPL|1`.
   Jurusan tersedia: **RPL, ANM, DKV**. Kelas harus sudah ada (lihat
   `ClassroomSeeder`); bila tidak cocok, baris tetap dibuat tanpa enrollment.
+- Tiga kolom terakhir **opsional** — wali murid untuk notifikasi WhatsApp.
+  Wali dibuat hanya bila `guardian_phone` terisi; `consent_at` langsung diisi.
 - Import bersifat **upsert** berdasarkan `nis` (mengembalikan `created`, `updated`, `errors`).
 
 ## Struktur Kelas (Seeder)
@@ -201,8 +231,11 @@ nis,full_name,grade_level,major,rombel,status
 - **3 jurusan**: RPL (Rekayasa Perangkat Lunak), ANM (Animasi), DKV (Desain Komunikasi Visual).
 - **18 kelas** = 3 jurusan × 6 kelas (X/XI/XII × 2 rombel).
 
-Tidak ada seeder wali dummy; hanya **satu siswa demo** (`StudentSeeder`) untuk
-mencoba login portal mobile. Roster siswa lain dibuat lewat halaman admin / API
+Tidak ada seeder kelas dummy lain; hanya **satu siswa demo** (`StudentSeeder`)
+dan **satu wali ber-consent** (`GuardianSeeder`, nomor `081234567890`) untuk
+mencoba login portal mobile dan membuktikan notifikasi WhatsApp terkirim.
+`GuardianSeeder` tidak menyentuh siswa yang sudah punya wali, jadi data dari
+panel admin selalu menang. Roster siswa lain dibuat lewat halaman admin / API
 saat dibutuhkan, dan data uji otomatis memakai factory (`StudentFactory`,
 `GuardianFactory`).
 
@@ -213,11 +246,11 @@ saat dibutuhkan, dan data uji otomatis memakai factory (`StudentFactory`,
 | POST | `/auth/login` | Login panel admin/petugas (email + password) → token Sanctum (throttle 10/menit) |
 | GET | `/auth/me` | Profil user panel yang login (butuh token) |
 | POST | `/auth/logout` | Cabut token panel yang aktif |
-| GET | `/meta` | Lookup status/metode/sesi + konfigurasi wajah |
+| GET | `/meta` | Lookup status/metode/sesi + konfigurasi wajah + `attendance_window` (batas jam absen) |
 | GET | `/classrooms` `/majors` `/academic-years` | Master data |
-| GET/POST | `/students` | List (search & filter) / tambah |
+| GET/POST | `/students` | List (search & filter) / tambah (termasuk `guardians[]`) |
 | GET/PUT/PATCH/DELETE | `/students/{student}` | Detail / ubah / hapus |
-| POST | `/students/import` | Impor massal CSV |
+| POST | `/students/import` | Impor massal CSV (+ kolom wali opsional) |
 | GET/POST | `/officers` | List (search & filter) / tambah akun petugas |
 | GET/PUT/PATCH/DELETE | `/officers/{officer}` | Detail / ubah / aktif-nonaktif / hapus petugas |
 | GET/POST | `/students/{student}/face-descriptors` | List / simpan sampel wajah |
@@ -229,9 +262,9 @@ saat dibutuhkan, dan data uji otomatis memakai factory (`StudentFactory`,
 | POST | `/student/login` | Login portal siswa (NIS + PIN) → token Sanctum (throttle 10/menit) |
 | GET | `/student/me` | Profil siswa yang login (butuh token) |
 | GET | `/student/attendances` | Riwayat absensi siswa yang login (hanya milik sendiri) |
-| PUT | `/student/pin` | Ganti PIN siswa (butuh token) |
+| PUT | `/student/pin` | Ganti PIN siswa (hanya sekali; selanjutnya `403`) |
 | POST | `/student/logout` | Cabut token aktif siswa |
-| POST | `/student/attendance/scan` | Absensi mandiri: wajah diverifikasi 1:1 ke siswa login (throttle 30/menit) |
+| POST | `/student/attendance/scan` | Absensi mandiri: wajah 1:1, sesi otomatis dari jam, `422 attendance_closed` di luar jendela (throttle 30/menit) |
 
 > **Semua endpoint operasional admin/petugas terkunci `auth:sanctum`.** Login
 > panel memakai `POST /auth/login`; token dikirim app lewat header
@@ -263,8 +296,7 @@ node tests/face.e2e.mjs       # registrasi wajah (admin) → scan & mesin absen 
 node tests/recap.e2e.mjs      # rekap absensi petugas → fallback wali + export .xlsx
 
 cd ../Presensi_mobile
-node tests/mobile.e2e.mjs     # login NIS+PIN → wajib ganti PIN → absensi wajah 1:1 → riwayat → keluar
-```
+node tests/mobile.e2e.mjs     # login NIS+PIN → wajib ganti PIN → absensi wajah 1:1 → riwayat → keluar```
 
 `tests/face.e2e.mjs` menguji alur wajah penuh di browser memakai kamera palsu
 Chromium yang diumpan `tests/fixtures/face.jpg` (video Y4M dibuat otomatis saat

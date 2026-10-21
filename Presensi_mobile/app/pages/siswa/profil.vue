@@ -80,6 +80,7 @@ async function onKeluar() {
 
       <!-- ── Keamanan: ganti PIN ── -->
       <NuxtLink
+        v-if="student?.can_change_pin !== false || student?.must_change_pin"
         to="/siswa/ganti-pin"
         class="mt-4 flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm transition active:scale-[0.99]"
       >
@@ -91,11 +92,29 @@ async function onKeluar() {
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-bold text-slate-900">Ganti PIN</span>
           <span class="mt-0.5 block text-xs text-slate-400">
-            {{ student?.must_change_pin ? 'PIN bawaan wajib diganti' : 'Ubah PIN rahasia akun Anda' }}
+            {{ student?.must_change_pin ? 'PIN bawaan wajib diganti' : 'PIN hanya bisa diganti sekali' }}
           </span>
         </span>
         <AppIcon name="chevron-right" :size="20" class="text-slate-300" />
       </NuxtLink>
+
+      <!-- PIN sudah pernah diganti: bukan link, hanya info terkunci -->
+      <div
+        v-else
+        class="mt-4 flex items-center gap-3 rounded-2xl bg-white p-4 opacity-80 shadow-sm"
+      >
+        <span
+          class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+        >
+          <AppIcon name="lock" :size="20" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-bold text-slate-500">PIN Terkunci</span>
+          <span class="mt-0.5 block text-xs text-slate-400">
+            PIN sudah diganti sekali dan tidak dapat diubah lagi
+          </span>
+        </span>
+      </div>
 
       <!-- ── Tombol keluar ── -->
       <button
