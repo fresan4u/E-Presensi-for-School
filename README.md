@@ -344,13 +344,39 @@ script.
 
 ### Deploy manual (cadangan)
 
-Kalau auto-deploy sedang tidak bisa dipakai:
+Auto-deploy Vercel bergantung pada webhook GitHub → Vercel. Kalau webhook itu
+berhenti terkirim (pernah kejadian: koneksi tampak "Connected" di Vercel tapi
+tak ada deployment baru saat push), pakai salah satu cara berikut.
+
+**Cara 1 (disarankan) — bangun dari commit Git:**
+
+```sh
+./deploy-vercel-git.sh          # ref default: main
+./deploy-vercel-git.sh <sha>    # commit tertentu
+```
+
+Script ini memanggil deployment API Vercel dengan `gitSource`, jadi Vercel tetap
+membangun dari commit di GitHub (deployment ter-link ke commit, sama seperti
+auto-deploy). Ketiga project (admin, petugas, mobile) dipicu sekaligus dan
+langsung menempati domain produksinya.
+
+**Cara 2 — upload lokal (`vercel --prod`):**
 
 ```sh
 ./deploy-vercel.sh Presensi_admin presensi-admin \
   NUXT_PUBLIC_API_BASE=https://presensi-api-production.up.railway.app
+```
+
+**Backend Laravel:**
+
+```sh
 cd backend && railway up
 ```
+
+> Kalau push tidak memicu build Vercel meski koneksi GitHub tampak aktif, coba
+> `vercel git disconnect && vercel git connect` di project terkait. Bila tetap
+> tidak jalan, webhook di sisi GitHub perlu di-*redeliver*/diaktifkan ulang dari
+> Settings → Webhooks repo (butuh akses admin repo).
 
 ### Catatan data
 
@@ -359,3 +385,13 @@ redeploy**. Dockerfile menjalankan `php artisan migrate --force && db:seed --for
 saat container start, sehingga data demo selalu ter-seed ulang. Cocok untuk demo,
 bukan untuk data produksi. File yang di-upload ke `storage/app/public` juga hilang
 saat redeploy.
+
+### Catatan insiden platform
+
+- **Railway**: saat ada insiden global (pernah kejadian 21 Okt 2026 — build
+  di-*pause* di semua region dan API `backboard.railway.com` menolak dengan
+  `Not Authorized`), commit baru **tidak** ter-deploy sampai Railway pulih.
+  Frontend Vercel tidak terpengaruh. Cek <https://status.railway.com> lalu ulangi
+  `cd backend && railway up` setelah pulih.
+- **Vercel**: auto-deploy hanya jalan bila webhook GitHub terkirim. Kalau ragu,
+  pakai `./deploy-vercel-git.sh` (lihat di atas) — hasilnya setara auto-deploy.
