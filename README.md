@@ -274,3 +274,56 @@ siswa, kedua test
 e2e membuat **sendiri** data yang dibutuhkan lewat API sebelum dijalankan. Test ini
 menghapus seluruh descriptor lalu mendaftar ulang satu siswa, jadi jalankan hanya
 di database pengembangan.
+
+## Deploy
+
+Setelah project Vercel & service Railway dihubungkan ke repo GitHub (sekali saja),
+update cukup lewat `git push`:
+
+```sh
+git add . && git commit -m "..." && git push origin main
+```
+
+Di balik layar:
+
+| Bagian | Platform | Konfigurasi |
+| --- | --- | --- |
+| `Presensi_admin` | Vercel | Root `Presensi_admin`, build `npm run build --workspace presensi-admin` |
+| `Presensi_petugas` | Vercel | Root `Presensi_petugas`, build `npm run build --workspace presensi-petugas` |
+| `Presensi_mobile` | Vercel | Root `Presensi_mobile`, build `npm run build --workspace presensi-mobile` |
+| `backend` | Railway | Root Directory `backend`, builder Dockerfile (`backend/Dockerfile`) |
+
+Ketiga project Vercel tetap memakai **install** default (`npm install`) di root
+monorepo, supaya workspace `@presensi/shared` ikut ter-link — jangan diubah ke
+instalasi per-folder.
+
+### Menghubungkan repo (sekali saja)
+
+```sh
+./setup-git-autodeploy.sh            # hubungkan 3 project Vercel + service Railway
+./setup-git-autodeploy.sh --verify   # cek status koneksi
+```
+
+Prasyarat lewat browser: **Vercel GitHub App** dan **Railway GitHub App** harus
+terinstall di repo ini. Kalau belum, script akan berhenti dengan pesan
+"install the GitHub integration first" — buka <https://github.com/apps/vercel>,
+pilih *Only select repositories* → centang `E-Presensi-for-School`, lalu ulangi
+script.
+
+### Deploy manual (cadangan)
+
+Kalau auto-deploy sedang tidak bisa dipakai:
+
+```sh
+./deploy-vercel.sh Presensi_admin presensi-admin \
+  NUXT_PUBLIC_API_BASE=https://presensi-api-production.up.railway.app
+cd backend && railway up
+```
+
+### Catatan data
+
+Railway memakai SQLite di disk sementara, jadi **database di-reset setiap
+redeploy**. Dockerfile menjalankan `php artisan migrate --force && db:seed --force`
+saat container start, sehingga data demo selalu ter-seed ulang. Cocok untuk demo,
+bukan untuk data produksi. File yang di-upload ke `storage/app/public` juga hilang
+saat redeploy.
