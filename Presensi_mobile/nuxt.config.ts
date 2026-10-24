@@ -34,6 +34,10 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: '/api/v1',
+      // Koordinat sekolah buat geofencing (desimal). Bisa diganti via env
+      // NUXT_PUBLIC_SCHOOL_LAT / NUXT_PUBLIC_SCHOOL_LNG buat testing.
+      schoolLat: process.env.NUXT_PUBLIC_SCHOOL_LAT || '-6.188410',
+      schoolLng: process.env.NUXT_PUBLIC_SCHOOL_LNG || '106.924823',
     },
   },
 

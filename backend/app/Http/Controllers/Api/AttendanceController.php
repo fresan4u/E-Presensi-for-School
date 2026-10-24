@@ -202,7 +202,16 @@ class AttendanceController extends Controller
 
         $student = $match['descriptor']->student;
         $photoPath = $this->storeScanPhoto($data['photo'] ?? null, $student, $at, $session->code);
-        $attendance = $this->persistAttendance($student, $session, $at, $match['descriptor'], $match['distance'], $photoPath);
+        $attendance = $this->persistAttendance(
+            $student,
+            $session,
+            $at,
+            $match['descriptor'],
+            $match['distance'],
+            $photoPath,
+            isset($data['lat']) ? (float) $data['lat'] : null,
+            isset($data['lng']) ? (float) $data['lng'] : null,
+        );
         $this->discardDuplicatePhoto($attendance, $photoPath);
 
         $created = $attendance->wasRecentlyCreated;
@@ -256,7 +265,16 @@ class AttendanceController extends Controller
         }
 
         $photoPath = $this->storeScanPhoto($data['photo'] ?? null, $student, $at, $session->code);
-        $attendance = $this->persistAttendance($student, $session, $at, $match['descriptor'], $match['distance'], $photoPath);
+        $attendance = $this->persistAttendance(
+            $student,
+            $session,
+            $at,
+            $match['descriptor'],
+            $match['distance'],
+            $photoPath,
+            isset($data['lat']) ? (float) $data['lat'] : null,
+            isset($data['lng']) ? (float) $data['lng'] : null,
+        );
         $this->discardDuplicatePhoto($attendance, $photoPath);
 
         return (new AttendanceResource($attendance->load($this->relations())))
@@ -334,6 +352,8 @@ class AttendanceController extends Controller
         ?StudentFaceDescriptor $descriptor = null,
         ?float $distance = null,
         ?string $photoPath = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
     ): Attendance {
         $status = $this->resolveStatus($session, $at);
         $yearId = AcademicYear::where('is_active', true)->value('id');
@@ -353,6 +373,8 @@ class AttendanceController extends Controller
                 'match_distance' => $distance,
                 'photo_path' => $photoPath,
                 'checked_at' => $at,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
             ],
         );
     }

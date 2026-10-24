@@ -34,6 +34,9 @@ class ScanSelfRequest extends FormRequest
                 'nullable', 'string', 'max:4000000',
                 'regex:/^data:image\/(jpeg|jpg);base64,[A-Za-z0-9+\/=]+$/',
             ],
+            // Koordinat GPS siswa saat absen (buat geofencing/history).
+            'lat' => ['nullable', 'numeric'],
+            'lng' => ['nullable', 'numeric'],
         ];
     }
 }

@@ -4,6 +4,7 @@ useHead({ title: 'Scan Wajah · Absensi Digital' })
 const router = useRouter()
 const api = useApi()
 const { fetchMe } = useStudentAuth()
+const config = useRuntimeConfig()
 
 const {
   videoRef,
@@ -23,6 +24,55 @@ const closed = ref(false)
 /** Batas jam dari server, untuk label sesi & pesan. */
 const jendela = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
 
+/** Koordinat sekolah (desimal) untuk geofencing. */
+const SCHOOL_LAT = Number(config.public.schoolLat)
+const SCHOOL_LNG = Number(config.public.schoolLng)
+const RADIUS_METER = 100
+
+/** State geofencing */
+const lokasi = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
+const jarak = ref<number>(0)
+const statusLokasi = ref<'loading' | 'valid' | 'invalid' | 'error'>('loading')
+const errorMessageLokasi = ref('')
+
+let geoWatchId: number | null = null
+
+/** Rumus Haversine: jarak antar koordinat dalam meter. */
+function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+function prosesLokasi(position: GeolocationPosition) {
+  const lat = position.coords.latitude
+  const lng = position.coords.longitude
+  lokasi.value = { lat, lng }
+
+  const jarakHitung = getDistance(lat, lng, SCHOOL_LAT, SCHOOL_LNG)
+  jarak.value = Math.round(jarakHitung)
+
+  if (jarak.value <= RADIUS_METER) {
+    statusLokasi.value = 'valid'
+    errorMessageLokasi.value = ''
+  } else {
+    statusLokasi.value = 'invalid'
+    errorMessageLokasi.value = ''
+  }
+}
+
+function prosesError() {
+  statusLokasi.value = 'error'
+  errorMessageLokasi.value = 'Izin GPS ditolak atau tidak tersedia.'
+}
+
 /** Hasil scan terakhir (dibaca halaman berhasil). */
 const lastScan = useState<ScanResult | null>('last-scan', () => null)
 
@@ -39,6 +89,9 @@ const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
 })
 
 const labelSesi = computed(() => (sesiSaatIni.value === 'pulang' ? 'Absen Pulang' : 'Absen Masuk'))
+
+/** Kamera hanya boleh menyala jika lokasi valid. */
+const bisaScan = computed(() => statusLokasi.value === 'valid' && !closed.value)
 
 // Jangan keluar aplikasi jika tidak ada history (mis. dibuka langsung via URL).
 function goBack() {
@@ -57,21 +110,48 @@ onMounted(async () => {
     // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.
   }
 
+  // Geofencing: pantau lokasi siswa secara real-time.
+  statusLokasi.value = 'loading'
+  if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+    geoWatchId = navigator.geolocation.watchPosition(
+      prosesLokasi,
+      prosesError,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    )
+  } else {
+    prosesError()
+  }
+
   await initFace()
+})
+
+onBeforeUnmount(() => {
+  if (geoWatchId !== null && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+    navigator.geolocation.clearWatch(geoWatchId)
+    geoWatchId = null
+  }
 })
 
 /** Setiap descriptor terdeteksi -> langsung dikirim untuk dicocokkan 1:1. */
 watch(faceResult, (hasil) => {
-  if (hasil && !submitting.value && !closed.value) kirimAbsen(hasil.descriptor, hasil.photo)
+  if (hasil && !submitting.value && !closed.value && statusLokasi.value === 'valid') {
+    kirimAbsen(hasil.descriptor, hasil.photo)
+  }
 })
 
 async function kirimAbsen(descriptor: number[], photo?: string) {
+  if (statusLokasi.value !== 'valid') {
+    notice.value = 'Lokasi tidak valid. Anda harus berada di area sekolah untuk absen.'
+    return
+  }
+
   submitting.value = true
   notice.value = ''
 
   try {
     // Sesi TIDAK dikirim: server menentukan masuk/pulang dari jam.
-    const res = await api.studentScan(descriptor, photo)
+    // Kirim koordinat GPS untuk geofencing & history.
+    const res = await api.studentScan(descriptor, photo, lokasi.value.lat, lokasi.value.lng)
     lastScan.value = res
     stopFaceScan()
     router.push('/siswa/berhasil')
@@ -95,8 +175,15 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
     notice.value = apiErrorMessage(error)
     submitting.value = false
     // Ulangi pemindaian setelah gangguan sementara.
-    startFaceScan()
+    if (statusLokasi.value === 'valid') {
+      startFaceScan()
+    }
   }
+}
+
+function mulaiScan() {
+  if (!bisaScan.value) return
+  startFaceScan()
 }
 
 const statusText = computed(() => {
@@ -142,8 +229,42 @@ const statusText = computed(() => {
       </button>
     </header>
 
+    <!-- ── Banner Geofencing ── -->
+    <div class="px-5 pt-3">
+      <div
+        v-if="statusLokasi === 'loading'"
+        class="flex items-center justify-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-amber-800"
+      >
+        <AppIcon name="alert" :size="16" />
+        <span class="text-sm font-semibold">📍 Mengambil lokasi GPS...</span>
+      </div>
+      <div
+        v-else-if="statusLokasi === 'valid'"
+        class="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 text-emerald-700"
+      >
+        <AppIcon name="check-circle" :size="16" />
+        <span class="text-sm font-semibold">✅ Lokasi valid. Jarak: {{ jarak }} meter</span>
+      </div>
+      <div
+        v-else-if="statusLokasi === 'invalid'"
+        class="flex items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2.5 text-red-700"
+      >
+        <AppIcon name="alert" :size="16" />
+        <span class="text-center text-sm font-semibold">
+          ❌ Anda di luar area sekolah. Jarak: {{ jarak }} meter. Dekat ke lobi!
+        </span>
+      </div>
+      <div
+        v-else-if="statusLokasi === 'error'"
+        class="flex items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2.5 text-red-700"
+      >
+        <AppIcon name="alert" :size="16" />
+        <span class="text-center text-sm font-semibold">{{ errorMessageLokasi || 'Izin GPS ditolak atau tidak tersedia.' }}</span>
+      </div>
+    </div>
+
     <!-- ── Info sesi (ditentukan server dari jam) ── -->
-    <div class="px-5 pt-4">
+    <div class="px-5 pt-3">
       <div class="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5">
         <AppIcon name="clock" :size="16" class="text-brand-600" />
         <span class="text-sm font-semibold text-slate-700">
@@ -156,85 +277,69 @@ const statusText = computed(() => {
       </div>
     </div>
 
-    <!-- ── Area kamera pemindai ── -->
-    <main class="flex flex-1 flex-col px-5 pt-4">
+    <!-- ── Area kamera / blokir lokasi ── -->
+    <div class="mt-4 flex flex-1 flex-col items-center px-5">
       <div
-        class="relative mx-2 h-[46vh] min-h-[320px] w-full flex-1 overflow-hidden rounded-3xl bg-slate-900 shadow-[0_8px_30px_-12px_rgba(2,6,23,0.45)]"
+        class="relative flex w-full max-w-sm flex-col items-center rounded-3xl bg-white shadow-xl shadow-slate-900/10 ring-1 ring-slate-100"
       >
-        <!-- Feed kamera -->
-        <video
-          ref="videoRef"
-          autoplay
-          playsinline
-          muted
-          class="absolute inset-0 h-full w-full -scale-x-100 object-cover"
-        />
-
-        <!-- Badge status deteksi -->
-        <span
-          class="absolute top-4 left-4 z-10 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-[11px] font-bold tracking-wide text-scan uppercase backdrop-blur-sm"
-        >
-          <span
-            class="size-1.5 rounded-full bg-scan"
-            :class="faceStatus === 'scanning' ? 'animate-pulse' : ''"
-          />
-          {{ faceStatus === 'detected' ? 'Face Detected' : 'Kamera Aktif' }}
-        </span>
-
-        <!-- Bingkai pembidik wajah: kotak transparan + pinggiran sudut tebal -->
+        <!-- Blokir total jika lokasi tidak valid -->
         <div
-          class="absolute top-1/2 left-1/2 aspect-square w-[64%] max-w-[240px] -translate-x-1/2 -translate-y-1/2 border border-dashed border-scan/25"
+          v-if="statusLokasi !== 'valid'"
+          class="flex aspect-square w-full flex-col items-center justify-center rounded-3xl bg-slate-50 px-6 text-center"
         >
-          <span class="absolute -top-0.5 -left-0.5 size-9 rounded-tl-xl border-t-[5px] border-l-[5px] border-scan" />
-          <span class="absolute -top-0.5 -right-0.5 size-9 rounded-tr-xl border-t-[5px] border-r-[5px] border-scan" />
-          <span class="absolute -bottom-0.5 -left-0.5 size-9 rounded-bl-xl border-b-[5px] border-l-[5px] border-scan" />
-          <span class="absolute -right-0.5 -bottom-0.5 size-9 rounded-br-xl border-r-[5px] border-b-[5px] border-scan" />
+          <span class="flex size-16 items-center justify-center rounded-2xl bg-red-50">
+            <AppIcon name="alert" :size="32" class="text-red-500" />
+          </span>
+          <h2 class="mt-4 text-lg font-bold text-slate-900">Lokasi Belum Valid</h2>
+          <p class="mt-2 text-sm leading-relaxed text-slate-500">
+            <template v-if="statusLokasi === 'loading'">Sedang mengambil lokasi GPS...</template>
+            <template v-else-if="statusLokasi === 'invalid'">Anda harus berada di dalam area sekolah (maks. 100 meter).</template>
+            <template v-else>Aktifkan izin lokasi (GPS) untuk dapat melakukan absensi.</template>
+          </p>
         </div>
 
-        <!-- Garis pemindai berjalan -->
-        <div class="pointer-events-none absolute inset-x-0 top-0 h-full overflow-hidden">
-          <div
-            class="h-16 w-full bg-gradient-to-b from-transparent via-scan/15 to-scan/40"
-            :class="faceStatus === 'scanning' ? 'animate-[scan-line_0.9s_ease-in-out_infinite]' : 'animate-[scan-line_2.4s_ease-in-out_infinite]'"
-          />
-        </div>
+        <template v-else>
+          <div class="relative aspect-square w-full overflow-hidden rounded-3xl">
+            <video
+              ref="videoRef"
+              autoplay
+              playsinline
+              muted
+              class="h-full w-full object-cover"
+            ></video>
 
-        <!-- Overlay: menyiapkan kamera -->
-        <div
-          v-if="faceStatus === 'loading'"
-          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70 text-white"
-        >
-          <span class="size-7 animate-spin rounded-full border-2 border-white/30 border-t-scan" />
-          <p class="text-sm text-white/80">Menyiapkan kamera & model…</p>
-        </div>
+            <!-- Overlay panduan wajah -->
+            <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div
+                class="h-[68%] w-[68%] rounded-full border-2 transition-colors"
+                :class="{
+                  'border-white/70': faceStatus === 'ready',
+                  'border-amber-400': faceStatus === 'scanning',
+                  'border-emerald-400': faceStatus === 'detected',
+                  'border-red-400': faceStatus === 'error',
+                }"
+              ></div>
+            </div>
 
-        <!-- Overlay: kamera bermasalah -->
-        <div
-          v-else-if="faceStatus === 'error'"
-          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center text-white"
-        >
-          <AppIcon name="alert" :size="36" class="text-danger-500" />
-          <p class="max-w-xs text-sm text-white/85">{{ faceError }}</p>
-          <button type="button" class="btn-primary w-auto px-6" @click="initFace">
-            Coba Lagi
-          </button>
-        </div>
+            <!-- Status overlay -->
+            <div
+              class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-4 py-1.5 backdrop-blur-sm"
+            >
+              <p class="text-xs font-medium text-white">{{ statusText }}</p>
+            </div>
+          </div>
+
+          <div class="w-full px-5 pb-5 pt-4 text-center">
+            <p class="text-sm font-semibold text-slate-900">
+              {{ faceStatus === 'ready' ? 'Posisikan wajah di dalam lingkaran' : statusText }}
+            </p>
+            <p v-if="faceError" class="mt-1 text-xs text-red-500">{{ faceError }}</p>
+          </div>
+        </template>
       </div>
 
-      <!-- ── Instruksi ── -->
-      <p class="mt-5 text-center text-sm font-semibold text-slate-800">
-        Posisikan wajah Anda di dalam area
-      </p>
-      <p class="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-        <AppIcon name="user-scan" :size="15" />
-        {{ statusText }}
-      </p>
-
-      <p
-        v-if="notice"
-        class="mt-4 rounded-xl bg-danger-50 px-4 py-3 text-center text-xs font-medium text-danger-600"
-        role="alert"
-      >
+      <!-- ── Notifikasi ── -->
+      <p v-if="notice" class="mt-4 text-center text-sm font-medium text-red-600">
         {{ notice }}
       </p>
 
@@ -243,33 +348,57 @@ const statusText = computed(() => {
         type="button"
         data-testid="mulai-scan"
         class="btn-primary mt-5 mb-6"
-        :disabled="faceStatus !== 'ready' || submitting || closed"
-        @click="startFaceScan"
+        :disabled="faceStatus !== 'ready' || submitting || closed || statusLokasi !== 'valid'"
+        @click="mulaiScan"
       >
         <AppIcon name="scan-face" :size="20" />
-        <span>{{ closed ? 'Absen Ditutup' : faceStatus === 'scanning' || submitting ? 'Memindai…' : 'Mulai Scan' }}</span>
+        <span>{{
+          closed
+            ? 'Absen Ditutup'
+            : statusLokasi !== 'valid'
+              ? 'Tidak di Area Sekolah'
+              : faceStatus === 'scanning' || submitting
+                ? 'Memindai…'
+                : 'Mulai Scan'
+        }}</span>
       </button>
-    </main>
+    </div>
 
-    <!-- Panel bantuan (ikon tanda tanya di navbar) -->
+    <!-- ── Modal Bantuan ── -->
     <Teleport to="body">
       <div
         v-if="showHelp"
-        class="fixed inset-0 z-50 flex items-end bg-black/60 p-4"
-        role="dialog"
-        aria-modal="true"
-        @click.self="showHelp = false"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-5"
+        @click="showHelp = false"
       >
-        <div class="w-full rounded-t-3xl bg-white p-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
-          <div class="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-200" />
-          <h2 class="text-base font-bold text-slate-900">Tips Scan Wajah</h2>
-          <ul class="mt-3 space-y-2.5 text-sm text-slate-600">
-            <li v-for="tip in ['Pastikan wajah berada di dalam bingkai hijau', 'Gunakan pencahayaan terang di sekitar Anda', 'Lepas masker dan kacamata']" :key="tip" class="flex gap-2.5">
-              <AppIcon name="check" :size="18" class="mt-0.5 text-brand-600" :stroke-width="2.4" />
-              <span>{{ tip }}</span>
+        <div
+          class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+          @click.stop
+        >
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-bold text-slate-900">Cara Absensi</h2>
+            <button
+              type="button"
+              class="rounded-full p-1 text-slate-400 transition active:bg-slate-100"
+              @click="showHelp = false"
+            >
+              <AppIcon name="chevron-left" :size="20" />
+            </button>
+          </div>
+          <ol class="mt-4 space-y-3 text-sm text-slate-600">
+            <li class="flex gap-3">
+              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">1</span>
+              <span>Pastikan kamu berada di dalam area sekolah (maksimal jarak 100 meter).</span>
             </li>
-          </ul>
-          <button type="button" class="btn-primary mt-5" @click="showHelp = false">Mengerti</button>
+            <li class="flex gap-3">
+              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">2</span>
+              <span>Izinkan akses lokasi GPS saat diminta.</span>
+            </li>
+            <li class="flex gap-3">
+              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">3</span>
+              <span>Tekan <span class="font-semibold text-slate-900">Mulai Scan</span>, posisikan wajah di dalam lingkaran hingga terverifikasi otomatis.</span>
+            </li>
+          </ol>
         </div>
       </div>
     </Teleport>

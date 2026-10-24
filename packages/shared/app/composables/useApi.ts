@@ -365,10 +365,15 @@ export const useApi = () => {
     studentLogout: () => client<{ message: string }>('/student/logout', { method: 'POST' }),
     studentAttendances: (query: Record<string, unknown> = {}) =>
       client<Paginated<ApiAttendance>>('/student/attendances', { query }),
-    studentScan: (descriptor: number[], photo?: string) =>
+    studentScan: (descriptor: number[], photo?: string, lat?: number | null, lng?: number | null) =>
       client<ScanResult>('/student/attendance/scan', {
         method: 'POST',
-        body: { descriptor, ...(photo ? { photo } : {}) },
+        body: {
+          descriptor,
+          ...(photo ? { photo } : {}),
+          ...(lat !== null && lat !== undefined ? { lat } : {}),
+          ...(lng !== null && lng !== undefined ? { lng } : {}),
+        },
       }),
   }
 }
