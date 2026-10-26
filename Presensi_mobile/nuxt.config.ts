@@ -40,6 +40,10 @@ export default defineNuxtConfig({
       schoolLat: process.env.NUXT_PUBLIC_SCHOOL_LAT || '-6.188410',
       schoolLng: process.env.NUXT_PUBLIC_SCHOOL_LNG || '106.924823',
       schoolRadius: process.env.NUXT_PUBLIC_SCHOOL_RADIUS_METER || '100',
+      // Saklar geofencing. `false` = siswa bisa absen dari mana saja (fitur
+      // lokasi dimatikan sementara). Nyalakan dengan env
+      // NUXT_PUBLIC_GEOFENCE_ENABLED=true.
+      geofenceEnabled: process.env.NUXT_PUBLIC_GEOFENCE_ENABLED || 'false',
     },
   },
 

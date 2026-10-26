@@ -29,6 +29,12 @@ const schoolLat = ref(Number(config.public.schoolLat))
 const schoolLng = ref(Number(config.public.schoolLng))
 const radiusMeter = ref(Number(config.public.schoolRadius) || 100)
 
+/**
+ * Saklar geofencing. Saat ini dimatikan (default `false`): absensi tidak lagi
+ * diblokir oleh lokasi. Nyalakan lewat env NUXT_PUBLIC_GEOFENCE_ENABLED=true.
+ */
+const geofenceAktif = computed(() => String(config.public.geofenceEnabled) === 'true')
+
 /** State geofencing */
 const lokasi = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
 const jarak = ref<number>(0)
@@ -110,27 +116,34 @@ onMounted(async () => {
     // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.
   }
 
-  // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
-  // area absensi tanpa deploy ulang. Gagal fetch = pakai nilai env/config.
-  try {
-    const lokasiSekolah = await api.schoolLocation()
-    schoolLat.value = lokasiSekolah.data.latitude
-    schoolLng.value = lokasiSekolah.data.longitude
-    radiusMeter.value = lokasiSekolah.data.radius_meter
-  } catch {
-    // Abaikan: fallback config tetap dipakai.
-  }
+  if (geofenceAktif.value) {
+    // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
+    // area absensi tanpa deploy ulang. Gagal fetch = pakai nilai env/config.
+    try {
+      const lokasiSekolah = await api.schoolLocation()
+      schoolLat.value = lokasiSekolah.data.latitude
+      schoolLng.value = lokasiSekolah.data.longitude
+      radiusMeter.value = lokasiSekolah.data.radius_meter
+    } catch {
+      // Abaikan: fallback config tetap dipakai.
+    }
 
-  // Geofencing: pantau lokasi siswa secara real-time.
-  statusLokasi.value = 'loading'
-  if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-    geoWatchId = navigator.geolocation.watchPosition(
-      prosesLokasi,
-      prosesError,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    )
+    // Geofencing: pantau lokasi siswa secara real-time.
+    statusLokasi.value = 'loading'
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      geoWatchId = navigator.geolocation.watchPosition(
+        prosesLokasi,
+        prosesError,
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      )
+    } else {
+      prosesError()
+    }
   } else {
-    prosesError()
+    // Fitur lokasi dimatikan sementara: tidak minta izin GPS dan tidak
+    // memblokir absensi. Koordinat tetap dikirim bila nanti diaktifkan lagi.
+    statusLokasi.value = 'valid'
+    errorMessageLokasi.value = ''
   }
 
   await initFace()
@@ -240,8 +253,8 @@ const statusText = computed(() => {
       </button>
     </header>
 
-    <!-- ── Banner Geofencing ── -->
-    <div class="px-5 pt-3">
+    <!-- ── Banner Geofencing (hanya saat fitur lokasi aktif) ── -->
+    <div v-if="geofenceAktif" class="px-5 pt-3">
       <div
         v-if="statusLokasi === 'loading'"
         class="flex items-center justify-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-amber-800"
@@ -397,16 +410,18 @@ const statusText = computed(() => {
             </button>
           </div>
           <ol class="mt-4 space-y-3 text-sm text-slate-600">
+            <template v-if="geofenceAktif">
+              <li class="flex gap-3">
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">1</span>
+                <span>Pastikan kamu berada di dalam area sekolah (maksimal jarak {{ radiusMeter }} meter).</span>
+              </li>
+              <li class="flex gap-3">
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">2</span>
+                <span>Izinkan akses lokasi GPS saat diminta.</span>
+              </li>
+            </template>
             <li class="flex gap-3">
-              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">1</span>
-              <span>Pastikan kamu berada di dalam area sekolah (maksimal jarak {{ radiusMeter }} meter).</span>
-            </li>
-            <li class="flex gap-3">
-              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">2</span>
-              <span>Izinkan akses lokasi GPS saat diminta.</span>
-            </li>
-            <li class="flex gap-3">
-              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">3</span>
+              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">{{ geofenceAktif ? 3 : 1 }}</span>
               <span>Tekan <span class="font-semibold text-slate-900">Mulai Scan</span>, posisikan wajah di dalam lingkaran hingga terverifikasi otomatis.</span>
             </li>
           </ol>
