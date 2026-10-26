@@ -51,6 +51,8 @@ export interface ApiStudent {
   id: number
   nis: string
   full_name: string
+  /** Hanya dikirim ke panel admin/petugas; tidak pernah untuk siswa. */
+  pin?: string
   status: ApiLookup | null
   classroom: ApiClassroom | null
   guardians?: ApiStudentGuardian[]
@@ -145,6 +147,8 @@ export interface StudentPayload {
   nis: string
   full_name: string
   status?: string
+  /** PIN awal opsional; kosong = memakai NIS. */
+  pin?: string | null
   classroom_id?: number | null
   academic_year_id?: number | null
   guardians?: GuardianPayload[]
@@ -156,6 +160,20 @@ export interface StudentQuery {
   status?: string
   page?: number
   per_page?: number
+}
+
+/** Titik pusat & radius area absensi sekolah (geofencing app siswa). */
+export interface ApiSchoolLocation {
+  latitude: number
+  longitude: number
+  radius_meter: number
+  updated_at: string | null
+}
+
+export interface SchoolLocationPayload {
+  latitude: number
+  longitude: number
+  radius_meter: number
 }
 
 export interface ApiRole {
@@ -313,6 +331,14 @@ export const useApi = () => {
         { method: 'POST', body: form },
       )
     },
+
+    /* Lokasi sekolah (geofencing absensi mandiri) */
+    schoolLocation: () => client<Item<ApiSchoolLocation>>('/school-location'),
+    updateSchoolLocation: (body: SchoolLocationPayload) =>
+      client<Item<ApiSchoolLocation> & { message: string }>('/school-location', {
+        method: 'PUT',
+        body,
+      }),
 
     /* Petugas (akun admin panel) */
     officers: (query: OfficerQuery = {}) =>

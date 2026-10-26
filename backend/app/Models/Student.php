@@ -19,15 +19,16 @@ class Student extends Authenticatable
     use HasApiTokens, HasFactory;
 
     /**
-     * PIN adalah kredensial rahasia (login mobile): hash saat disimpan dan
-     * jangan pernah diserialisasi.
+     * PIN adalah kredensial login mobile. Disimpan terenkripsi (bukan hash)
+     * supaya admin bisa menampilkan & mengubahnya dari panel. Nilainya tetap
+     * disembunyikan dari serialisasi umum lewat atribut `Hidden`.
      *
      * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
-            'pin' => 'hashed',
+            'pin' => 'encrypted',
             'must_change_pin' => 'boolean',
             'pin_changed_at' => 'datetime',
         ];

@@ -54,7 +54,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowLeftRight, Database, LayoutDashboard, LogOut, ScanFace, ShieldCheck, UserCog } from '@lucide/vue'
+import { ArrowLeftRight, Database, LayoutDashboard, LogOut, MapPin, ScanFace, ShieldCheck, UserCog } from '@lucide/vue'
 import type { Component } from 'vue'
 
 export interface SidebarItem {
@@ -82,6 +82,7 @@ const props = withDefaults(
       { label: 'Dashboard', to: '/', icon: LayoutDashboard },
       { label: 'Data Siswa', to: '/siswa', icon: Database },
       { label: 'Registrasi Wajah', to: '/registrasi-wajah', icon: ScanFace },
+      { label: 'Lokasi Sekolah', to: '/lokasi-sekolah', icon: MapPin },
       { label: 'Kelola Petugas', to: '/kelola-petugas', icon: UserCog },
     ],
     subtitle: 'Dashboard Admin',

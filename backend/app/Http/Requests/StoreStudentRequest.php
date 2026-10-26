@@ -16,6 +16,8 @@ class StoreStudentRequest extends FormRequest
         return [
             'nis' => ['required', 'string', 'max:20', 'unique:students,nis'],
             'full_name' => ['required', 'string', 'max:150'],
+            // PIN awal opsional. Bila dikosongkan, model memakai NIS sebagai PIN.
+            'pin' => ['nullable', 'string', 'min:4', 'max:32'],
             'status' => ['nullable', 'in:aktif,non_aktif'],
             'classroom_id' => ['nullable', 'integer', 'exists:classrooms,id'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],

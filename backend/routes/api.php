@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\FaceDescriptorController;
 use App\Http\Controllers\Api\OfficerController;
 use App\Http\Controllers\Api\ReferenceController;
+use App\Http\Controllers\Api\SchoolSettingController;
 use App\Http\Controllers\Api\StudentAttendanceController;
 use App\Http\Controllers\Api\StudentAuthController;
 use App\Http\Controllers\Api\StudentController;
@@ -47,6 +48,12 @@ Route::prefix('v1')->group(function () {
     Route::post('/attendance/scan', [AttendanceController::class, 'scan'])->middleware('throttle:30,1');
 
     /*
+     * Lokasi sekolah publik: app siswa mengambil titik & radius terbaru saat
+     * scan, sehingga admin bisa memindahkan titik tanpa redeploy.
+     */
+    Route::get('/school-location', [SchoolSettingController::class, 'show']);
+
+    /*
      * Sesi panel admin & petugas.
      */
     Route::middleware(['auth:sanctum', EnsurePanelUser::class])->group(function () {
@@ -75,6 +82,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/students/{student}/face-descriptors', [FaceDescriptorController::class, 'index']);
         Route::post('/students/{student}/face-descriptors', [FaceDescriptorController::class, 'store']);
         Route::delete('/students/{student}/face-descriptors/{descriptor}', [FaceDescriptorController::class, 'destroy']);
+
+        // Lokasi sekolah (geofencing absensi mandiri siswa)
+        Route::put('/school-location', [SchoolSettingController::class, 'update']);
 
         // Absensi (rekap & pencatatan manual)
         Route::get('/attendances/recap', [AttendanceController::class, 'recap']);

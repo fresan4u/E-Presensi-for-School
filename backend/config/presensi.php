@@ -40,8 +40,9 @@ return [
     | Akun Siswa Demo
     |--------------------------------------------------------------------------
     |
-    | Login portal siswa memakai NIS + PIN. PIN disimpan ter-hash. Default di
-    | sini sama dengan NIS; ganti lewat .env bila perlu.
+    | Login portal siswa memakai NIS + PIN. PIN disimpan terenkripsi supaya
+    | admin bisa menampilkan/mengubahnya dari panel. Default di sini sama
+    | dengan NIS; ganti lewat .env bila perlu.
     |
     */
 
@@ -49,6 +50,24 @@ return [
         'nis' => env('STUDENT_NIS', '2024000'),
         'full_name' => env('STUDENT_NAME', 'Ahmad Fauzi'),
         'pin' => env('STUDENT_PIN', '2024000'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lokasi Sekolah (Geofencing Absensi Siswa)
+    |--------------------------------------------------------------------------
+    |
+    | Titik pusat area absensi mandiri. Nilai ini dipakai sebagai fallback
+    | sebelum admin menyimpan titik dari panel "Lokasi Sekolah". Setelah admin
+    | menyimpan, nilai dari tabel `school_settings` yang berlaku (tanpa perlu
+    | redeploy). Radius dalam meter.
+    |
+    */
+
+    'school' => [
+        'latitude' => (float) env('SCHOOL_LAT', -6.188410),
+        'longitude' => (float) env('SCHOOL_LNG', 106.924823),
+        'radius_meter' => (int) env('SCHOOL_RADIUS_METER', 100),
     ],
 
     /*

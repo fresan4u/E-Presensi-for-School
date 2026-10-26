@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,6 +18,12 @@ class StudentResource extends JsonResource
             'id' => $this->id,
             'nis' => $this->nis,
             'full_name' => $this->full_name,
+            /*
+             * PIN hanya untuk panel admin/petugas yang login sebagai User.
+             * Siswa (Student) & kiosk publik tidak pernah menerima PIN, jadi
+             * resource ini tetap aman dipakai di AttendanceResource.
+             */
+            'pin' => $this->when($request->user() instanceof User, fn () => $this->pin),
             'status' => $this->whenLoaded('status', fn () => [
                 'id' => $this->status->id,
                 'code' => $this->status->code,

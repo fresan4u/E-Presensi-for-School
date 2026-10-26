@@ -67,6 +67,8 @@ class StudentController extends Controller
             'nis' => $data['nis'],
             'full_name' => $data['full_name'],
             'status_id' => $statusId,
+            // Tanpa PIN eksplisit, model memakai NIS (lihat Student::booted()).
+            ...(filled($data['pin'] ?? null) ? ['pin' => $data['pin']] : []),
         ]);
 
         $this->syncEnrollment($student, $data['classroom_id'] ?? null, $data['academic_year_id'] ?? null);
@@ -91,6 +93,14 @@ class StudentController extends Controller
         $studentFields = Arr::only($data, ['nis', 'full_name']);
         if (array_key_exists('status', $data)) {
             $studentFields['status_id'] = StudentStatus::where('code', $data['status'])->value('id');
+        }
+
+        // Admin mengganti PIN = reset resmi. Buka lagi gerbang ganti PIN sekali
+        // supaya siswa bisa menggantinya sendiri setelah login.
+        if (filled($data['pin'] ?? null)) {
+            $studentFields['pin'] = $data['pin'];
+            $studentFields['must_change_pin'] = false;
+            $studentFields['pin_changed_at'] = null;
         }
 
         $student->update($studentFields);

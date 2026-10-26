@@ -75,7 +75,7 @@
         </thead>
         <tbody class="bg-white">
           <tr v-if="loading">
-            <td colspan="6" class="px-6 py-10 text-center text-sm text-gray-500">
+            <td colspan="7" class="px-6 py-10 text-center text-sm text-gray-500">
               <span class="inline-flex items-center gap-2">
                 <Loader2 class="h-4 w-4 animate-spin" />
                 Memuat data siswa...
@@ -93,6 +93,9 @@
               {{ siswa.full_name }}
             </td>
             <td class="px-6 py-4 text-sm text-gray-600">{{ siswa.nis }}</td>
+            <td class="px-6 py-4">
+              <span class="font-mono text-sm text-slate-800">{{ siswa.pin ?? '-' }}</span>
+            </td>
             <td class="px-6 py-4 text-sm text-gray-600">
               {{ siswa.classroom?.name ?? '-' }}
             </td>
@@ -118,6 +121,15 @@
             </td>
             <td class="px-6 py-4">
               <div class="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-700 transition-colors hover:bg-slate-200"
+                  :aria-label="`Ubah PIN ${siswa.full_name}`"
+                  title="Ubah PIN"
+                  @click="openPin(siswa)"
+                >
+                  <KeyRound class="h-4 w-4" />
+                </button>
                 <nuxt-link
                   :to="{ path: '/registrasi-wajah', query: { student: siswa.id } }"
                   class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-emerald-900 text-white transition-colors hover:bg-emerald-800"
@@ -141,7 +153,7 @@
 
           <!-- Empty state -->
           <tr v-if="!loading && !students.length">
-            <td colspan="6" class="px-6 py-10 text-center text-sm text-gray-500">
+            <td colspan="7" class="px-6 py-10 text-center text-sm text-gray-500">
               Tidak ada data yang cocok dengan pencarianmu.
             </td>
           </tr>
@@ -175,6 +187,20 @@
         <label class="flex flex-col gap-1.5">
           <span class="text-sm font-medium text-slate-800">NIS</span>
           <input v-model="form.nis" type="text" class="input" placeholder="Nomor induk siswa" />
+        </label>
+        <label class="flex flex-col gap-1.5 sm:col-span-2">
+          <span class="text-sm font-medium text-slate-800">PIN Aplikasi Siswa</span>
+          <input
+            v-model="form.pin"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            class="input font-mono"
+            placeholder="Kosongkan untuk memakai NIS"
+          />
+          <span class="text-xs text-slate-400">
+            Dipakai siswa untuk login aplikasi mobile (minimal 4 karakter). Boleh dilihat & diubah kapan saja.
+          </span>
         </label>
         <label class="flex flex-col gap-1.5 sm:col-span-2">
           <span class="text-sm font-medium text-slate-800">Kelas</span>
@@ -225,11 +251,35 @@
         </label>
       </div>
     </modal>
+
+    <!-- Modal Ubah PIN -->
+    <modal
+      v-model="isPinOpen"
+      :title="pinStudent ? `Ubah PIN ${pinStudent.full_name}` : 'Ubah PIN Siswa'"
+      description="PIN baru langsung berlaku untuk login aplikasi mobile siswa."
+      :loading="savingPin"
+      @confirm="submitPin"
+    >
+      <label class="flex flex-col gap-1.5">
+        <span class="text-sm font-medium text-slate-800">PIN Baru</span>
+        <input
+          v-model="pinForm.pin"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          class="input font-mono"
+          placeholder="Minimal 4 karakter"
+        />
+        <span class="text-xs text-slate-400">
+          Sampaikan PIN ini hanya kepada siswa yang bersangkutan.
+        </span>
+      </label>
+    </modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CheckCircle2, Loader2, Plus, ScanFace, Search, Trash2, TriangleAlert, Upload } from '@lucide/vue'
+import { CheckCircle2, KeyRound, Loader2, Plus, ScanFace, Search, Trash2, TriangleAlert, Upload } from '@lucide/vue'
 import type { ApiClassroom, ApiStudent } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
@@ -251,7 +301,7 @@ const totalPages = ref(1)
 const classrooms = ref<ApiClassroom[]>([])
 const notice = ref<{ type: 'success' | 'error'; text: string } | null>(null)
 
-const tableHeaders = ['Nama Lengkap', 'NIS', 'Kelas', 'Status', 'Wajah']
+const tableHeaders = ['Nama Lengkap', 'NIS', 'PIN', 'Kelas', 'Status', 'Wajah']
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -331,6 +381,7 @@ const savingStudent = ref(false)
 const form = reactive({
   nis: '',
   full_name: '',
+  pin: '',
   classroom_id: null as number | null,
   status: 'aktif',
   guardian_name: '',
@@ -342,6 +393,7 @@ const openCreate = () => {
   Object.assign(form, {
     nis: '',
     full_name: '',
+    pin: '',
     classroom_id: null,
     status: 'aktif',
     guardian_name: '',
@@ -355,12 +407,15 @@ const submitStudent = async () => {
   savingStudent.value = true
   try {
     const phone = form.guardian_phone.trim()
+    const pin = form.pin.trim()
 
     await api.createStudent({
       nis: form.nis.trim(),
       full_name: form.full_name.trim(),
       classroom_id: form.classroom_id,
       status: form.status,
+      // PIN opsional; tanpa PIN, backend memakai NIS sebagai PIN awal.
+      ...(pin ? { pin } : {}),
       // Wali hanya dikirim bila nomornya diisi.
       ...(phone
         ? {
@@ -383,6 +438,40 @@ const submitStudent = async () => {
     showNotice('error', apiErrorMessage(error))
   } finally {
     savingStudent.value = false
+  }
+}
+
+/* ---------- Ubah PIN ---------- */
+const isPinOpen = ref(false)
+const savingPin = ref(false)
+const pinStudent = ref<ApiStudent | null>(null)
+const pinForm = reactive({ pin: '' })
+
+const openPin = (student: ApiStudent) => {
+  pinStudent.value = student
+  pinForm.pin = ''
+  isPinOpen.value = true
+}
+
+const submitPin = async () => {
+  if (!pinStudent.value) return
+
+  const pin = pinForm.pin.trim()
+  if (pin.length < 4) {
+    showNotice('error', 'PIN minimal 4 karakter.')
+    return
+  }
+
+  savingPin.value = true
+  try {
+    await api.updateStudent(pinStudent.value.id, { pin })
+    isPinOpen.value = false
+    showNotice('success', `PIN ${pinStudent.value.full_name} berhasil diubah.`)
+    await loadStudents()
+  } catch (error) {
+    showNotice('error', apiErrorMessage(error))
+  } finally {
+    savingPin.value = false
   }
 }
 

@@ -9,7 +9,6 @@ use App\Http\Resources\StudentProfileResource;
 use App\Models\Student;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * Autentikasi portal siswa (app mobile) memakai NIS + PIN.
@@ -42,7 +41,7 @@ class StudentAuthController extends Controller
             ->where('nis', $data['nis'])
             ->first();
 
-        if (! $student || ! $student->pin || ! Hash::check($data['pin'], $student->pin)) {
+        if (! $student || ! $student->pin || ! hash_equals((string) $student->pin, (string) $data['pin'])) {
             return response()->json(['message' => 'NIS atau PIN salah.'], 401);
         }
 
@@ -80,11 +79,11 @@ class StudentAuthController extends Controller
             ], 403);
         }
 
-        if (! Hash::check($data['current_pin'], $student->pin)) {
+        if (! hash_equals((string) $student->pin, (string) $data['current_pin'])) {
             return response()->json(['message' => 'PIN saat ini salah.'], 422);
         }
 
-        if (Hash::check($data['pin'], $student->pin)) {
+        if (hash_equals((string) $student->pin, (string) $data['pin'])) {
             return response()->json(['message' => 'PIN baru tidak boleh sama dengan PIN lama.'], 422);
         }
 

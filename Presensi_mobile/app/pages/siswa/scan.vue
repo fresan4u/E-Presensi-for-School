@@ -24,10 +24,10 @@ const closed = ref(false)
 /** Batas jam dari server, untuk label sesi & pesan. */
 const jendela = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
 
-/** Koordinat sekolah (desimal) untuk geofencing. */
-const SCHOOL_LAT = Number(config.public.schoolLat)
-const SCHOOL_LNG = Number(config.public.schoolLng)
-const RADIUS_METER = 100
+/** Titik & radius area sekolah; diambil dari backend saat halaman dibuka. */
+const schoolLat = ref(Number(config.public.schoolLat))
+const schoolLng = ref(Number(config.public.schoolLng))
+const radiusMeter = ref(Number(config.public.schoolRadius) || 100)
 
 /** State geofencing */
 const lokasi = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
@@ -56,10 +56,10 @@ function prosesLokasi(position: GeolocationPosition) {
   const lng = position.coords.longitude
   lokasi.value = { lat, lng }
 
-  const jarakHitung = getDistance(lat, lng, SCHOOL_LAT, SCHOOL_LNG)
+  const jarakHitung = getDistance(lat, lng, schoolLat.value, schoolLng.value)
   jarak.value = Math.round(jarakHitung)
 
-  if (jarak.value <= RADIUS_METER) {
+  if (jarak.value <= radiusMeter.value) {
     statusLokasi.value = 'valid'
     errorMessageLokasi.value = ''
   } else {
@@ -108,6 +108,17 @@ onMounted(async () => {
     jendela.value = meta.data.attendance_window
   } catch {
     // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.
+  }
+
+  // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
+  // area absensi tanpa deploy ulang. Gagal fetch = pakai nilai env/config.
+  try {
+    const lokasiSekolah = await api.schoolLocation()
+    schoolLat.value = lokasiSekolah.data.latitude
+    schoolLng.value = lokasiSekolah.data.longitude
+    radiusMeter.value = lokasiSekolah.data.radius_meter
+  } catch {
+    // Abaikan: fallback config tetap dipakai.
   }
 
   // Geofencing: pantau lokasi siswa secara real-time.
@@ -251,7 +262,7 @@ const statusText = computed(() => {
       >
         <AppIcon name="alert" :size="16" />
         <span class="text-center text-sm font-semibold">
-          ❌ Anda di luar area sekolah. Jarak: {{ jarak }} meter. Dekat ke lobi!
+          ❌ Anda di luar area sekolah (maks. {{ radiusMeter }} m). Jarak: {{ jarak }} m.
         </span>
       </div>
       <div
@@ -293,7 +304,7 @@ const statusText = computed(() => {
           <h2 class="mt-4 text-lg font-bold text-slate-900">Lokasi Belum Valid</h2>
           <p class="mt-2 text-sm leading-relaxed text-slate-500">
             <template v-if="statusLokasi === 'loading'">Sedang mengambil lokasi GPS...</template>
-            <template v-else-if="statusLokasi === 'invalid'">Anda harus berada di dalam area sekolah (maks. 100 meter).</template>
+            <template v-else-if="statusLokasi === 'invalid'">Anda harus berada di dalam area sekolah (maks. {{ radiusMeter }} meter).</template>
             <template v-else>Aktifkan izin lokasi (GPS) untuk dapat melakukan absensi.</template>
           </p>
         </div>
@@ -388,7 +399,7 @@ const statusText = computed(() => {
           <ol class="mt-4 space-y-3 text-sm text-slate-600">
             <li class="flex gap-3">
               <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">1</span>
-              <span>Pastikan kamu berada di dalam area sekolah (maksimal jarak 100 meter).</span>
+              <span>Pastikan kamu berada di dalam area sekolah (maksimal jarak {{ radiusMeter }} meter).</span>
             </li>
             <li class="flex gap-3">
               <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">2</span>

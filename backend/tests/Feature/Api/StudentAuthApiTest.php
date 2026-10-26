@@ -5,7 +5,6 @@ namespace Tests\Feature\Api;
 use App\Models\Student;
 use App\Models\StudentStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class StudentAuthApiTest extends TestCase
@@ -152,7 +151,7 @@ class StudentAuthApiTest extends TestCase
         ])->assertStatus(403)->assertJsonPath('code', 'pin_already_changed');
 
         // PIN seharusnya tidak berubah oleh percobaan kedua yang ditolak.
-        $this->assertTrue(Hash::check('4321', Student::where('nis', '2024009')->firstOrFail()->pin));
+        $this->assertSame('4321', Student::where('nis', '2024009')->firstOrFail()->pin);
     }
 
     public function test_logout_revokes_token(): void

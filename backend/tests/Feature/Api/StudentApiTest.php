@@ -164,4 +164,57 @@ class StudentApiTest extends TestCase
         // Baris tanpa nomor wali tidak membuat baris guardian kosong.
         $this->assertDatabaseMissing('guardians', ['student_id' => Student::where('nis', '9102')->firstOrFail()->id]);
     }
+
+    /**
+     * Admin harus bisa melihat PIN setiap siswa untuk dibagikan/diingatkan,
+     * sedangkan endpoint publik tidak pernah membocorkannya.
+     */
+    public function test_admin_can_see_student_pin(): void
+    {
+        $student = Student::firstOrFail();
+
+        $this->getJson('/api/v1/students')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $student->id)
+            ->assertJsonPath('data.0.pin', $student->nis);
+    }
+
+    public function test_student_pin_is_not_returned_to_anonymous_requests(): void
+    {
+        $response = $this->getJson('/api/v1/students');
+
+        $response->assertUnauthorized();
+        $this->assertArrayNotHasKey('pin', (array) $response->json('data.0', []));
+    }
+
+    public function test_admin_can_create_student_with_explicit_pin(): void
+    {
+        $this->postJson('/api/v1/students', [
+            'nis' => '8003',
+            'full_name' => 'Siswa Pin Baru',
+            'pin' => '889900',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.pin', '889900');
+
+        $this->assertSame('889900', Student::where('nis', '8003')->firstOrFail()->pin);
+    }
+
+    /**
+     * Reset PIN oleh admin membuka lagi kesempatan siswa mengganti PIN sendiri.
+     */
+    public function test_admin_can_change_student_pin_and_reopens_pin_change(): void
+    {
+        $student = Student::firstOrFail();
+        $student->update(['pin_changed_at' => now()]);
+
+        $this->putJson("/api/v1/students/{$student->id}", ['pin' => '7766'])
+            ->assertOk()
+            ->assertJsonPath('data.pin', '7766');
+
+        $student->refresh();
+        $this->assertSame('7766', $student->pin);
+        $this->assertFalse($student->must_change_pin);
+        $this->assertNull($student->pin_changed_at);
+    }
 }
