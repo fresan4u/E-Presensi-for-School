@@ -201,7 +201,7 @@ class StudentApiTest extends TestCase
 
         $this->get('/api/v1/students', ['Accept' => 'text/html'])
             ->assertUnauthorized()
-            ->assertJsonPath('message', 'Unauthenticated.');
+            ->assertJsonPath('message', 'Sesi Anda sudah berakhir. Silakan login kembali.');
     }
 
     public function test_admin_can_create_student_with_explicit_pin(): void

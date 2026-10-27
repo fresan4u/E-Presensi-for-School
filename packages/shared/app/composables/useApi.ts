@@ -251,7 +251,18 @@ export interface RecapQuery {
 
 /** Ambil pesan error yang ramah dari error `$fetch`. */
 export const apiErrorMessage = (error: unknown): string => {
-  const data = (error as { data?: { message?: string; errors?: Record<string, string[]> } })?.data
+  const failure = error as {
+    status?: number
+    statusCode?: number
+    data?: { message?: string; errors?: Record<string, string[]> }
+  }
+
+  // Sesi kedaluwarsa/dicabut (mis. database demo di-reset saat deploy).
+  if (failure.status === 401 || failure.statusCode === 401) {
+    return 'Sesi Anda sudah berakhir. Silakan login kembali.'
+  }
+
+  const data = failure.data
   if (data?.errors) {
     const first = Object.values(data.errors).flat()[0]
     if (first) return first
