@@ -110,7 +110,7 @@ onMounted(async () => {
 
   // Batas jam absen dari server (sumber kebenaran) untuk label & pesan.
   try {
-    const meta = await api.meta()
+    const meta = await api.studentMeta()
     jendela.value = meta.data.attendance_window
   } catch {
     // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.

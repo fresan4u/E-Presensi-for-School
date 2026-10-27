@@ -68,7 +68,7 @@ async function muat() {
       api.studentAttendances({ date: tanggal, session: 'masuk', per_page: 1 }),
       api.studentAttendances({ date: tanggal, session: 'pulang', per_page: 1 }),
       api.studentAttendances({ per_page: 5 }),
-      api.meta(),
+      api.studentMeta(),
     ])
 
     absenMasuk.value = masuk.data[0] ?? null

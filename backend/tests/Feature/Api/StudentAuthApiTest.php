@@ -154,6 +154,26 @@ class StudentAuthApiTest extends TestCase
         $this->assertSame('4321', Student::where('nis', '2024009')->firstOrFail()->pin);
     }
 
+    public function test_student_can_fetch_reference_meta(): void
+    {
+        Student::factory()->create(['nis' => '2024010']);
+        $token = $this->login('2024010', '2024010');
+
+        $this->withToken($token)->getJson('/api/v1/student/meta')
+            ->assertOk()
+            ->assertJsonPath('data.face.samples_per_student', 3)
+            ->assertJsonStructure([
+                'data' => [
+                    'attendance_sessions',
+                    'attendance_statuses',
+                    'attendance_window' => ['self_cutoff', 'handover_at', 'pulang_from'],
+                ],
+            ]);
+
+        // Endpoint meta panel tetap tertutup untuk siswa.
+        $this->withToken($token)->getJson('/api/v1/meta')->assertForbidden();
+    }
+
     public function test_logout_revokes_token(): void
     {
         Student::factory()->create(['nis' => '2024008']);

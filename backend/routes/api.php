@@ -104,6 +104,11 @@ Route::prefix('v1')->group(function () {
         // Riwayat absensi milik siswa yang login (student_id dari token).
         Route::get('/student/attendances', [StudentAttendanceController::class, 'index']);
 
+        // Referensi yang dibutuhkan app siswa (jendela absen, status, sesi).
+        // `/meta` milik panel tidak bisa dipakai siswa karena middleware
+        // EnsurePanelUser, sehingga perlu endpoint khusus di grup siswa.
+        Route::get('/student/meta', [ReferenceController::class, 'meta']);
+
         // Registrasi wajah mandiri (student_id selalu dari token).
         Route::get('/student/face-descriptors', [FaceDescriptorController::class, 'mine']);
         Route::post('/student/face-descriptors', [FaceDescriptorController::class, 'storeMine'])

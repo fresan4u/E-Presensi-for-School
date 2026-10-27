@@ -413,6 +413,8 @@ export const useApi = () => {
           ...(lng !== null && lng !== undefined ? { lng } : {}),
         },
       }),
+    /* Referensi untuk portal siswa (jendela absen, status, sesi). */
+    studentMeta: () => client<Item<ApiMeta>>('/student/meta'),
     studentFaceDescriptors: () =>
       client<Collection<ApiFaceDescriptor>>('/student/face-descriptors'),
     studentRegisterFace: (
