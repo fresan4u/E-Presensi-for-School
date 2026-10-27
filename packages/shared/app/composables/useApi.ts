@@ -258,8 +258,15 @@ export const apiErrorMessage = (error: unknown): string => {
   }
 
   // Sesi kedaluwarsa/dicabut (mis. database demo di-reset saat deploy).
+  // Login yang gagal juga memakai 401, jadi pesan dari server tetap dipakai
+  // bila ada; fallback hanya untuk 401 tanpa pesan ("Unauthenticated.").
   if (failure.status === 401 || failure.statusCode === 401) {
-    return 'Sesi Anda sudah berakhir. Silakan login kembali.'
+    const message = failure.data?.message?.trim()
+    if (!message || message.toLowerCase() === 'unauthenticated.') {
+      return 'Sesi Anda sudah berakhir. Silakan login kembali.'
+    }
+
+    return message
   }
 
   const data = failure.data
