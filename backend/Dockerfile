@@ -1,8 +1,8 @@
-# Image demo untuk deploy Render: PHP 8.3 + ekstensi yang dipakai Laravel.
+# Image demo untuk deploy Railway: PHP 8.3 + ekstensi yang dipakai Laravel.
 #
 # Catatan: composer install dijalankan saat build image; migrate & seed saat
-# container start (disk Render bersifat sementara, jadi database SQLite dibuat
-# ulang setiap boot/deploy).
+# container start lewat `docker-entrypoint.sh`. Seed hanya jalan saat database
+# masih baru, dan APP_KEY disimpan di database/app_key agar stabil.
 
 FROM php:8.3-cli-bookworm
 
@@ -17,5 +17,5 @@ WORKDIR /app
 COPY . .
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
-# $PORT diisi Render saat runtime.
-CMD ["sh", "-c", "cp .env.render .env && touch database/database.sqlite && (grep -q '^APP_KEY=base64' .env || php artisan key:generate --force) && php artisan storage:link && php artisan migrate --force && php artisan db:seed --force && (php artisan serve --host 0.0.0.0 --port ${PORT:-8000} & while true; do php artisan schedule:run --no-interaction; sleep 60; done)"]
+# $PORT diisi Railway saat runtime.
+CMD ["sh", "docker-entrypoint.sh"]

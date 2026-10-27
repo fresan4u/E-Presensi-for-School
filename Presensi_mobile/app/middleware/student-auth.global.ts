@@ -22,9 +22,20 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (import.meta.client && !student.value) {
     try {
       await fetchMe()
-    } catch {
-      await logout()
-      return navigateTo('/siswa/login')
+    } catch (error) {
+      const failure = error as {
+        status?: number
+        statusCode?: number
+        response?: { status?: number }
+      }
+      const status = failure.status ?? failure.statusCode ?? failure.response?.status
+
+      // Hanya 401/403 yang berarti sesi benar-benar berakhir. Gangguan jaringan
+      // atau backend yang sedang restart tidak boleh menghapus sesi pengguna.
+      if (status === 401 || status === 403) {
+        await logout()
+        return navigateTo('/siswa/login')
+      }
     }
   }
 
