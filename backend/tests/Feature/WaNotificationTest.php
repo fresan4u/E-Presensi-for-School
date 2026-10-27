@@ -393,8 +393,7 @@ class WaNotificationTest extends TestCase
     }
 
     /**
-     * SEMENTARA (mode demo): absen melebihi batas waktu tetap tercatat `hadir`.
-     * Kembalikan pengujian ini ke `terlambat` setelah logika boundary dipulihkan.
+     * Absen `masuk` melewati `boundary_time` dicatat `terlambat`.
      */
     public function test_arrival_late_message_says_terlambat(): void
     {
@@ -412,8 +411,8 @@ class WaNotificationTest extends TestCase
             'session' => 'masuk',
         ])->assertCreated()->assertJsonPath('meta.wa_queued', true);
 
-        $this->assertSame('hadir', Attendance::firstOrFail()->status->code);
-        $this->assertStringContainsString('Status: Hadir', WaOutbox::firstOrFail()->message);
+        $this->assertSame('terlambat', Attendance::firstOrFail()->status->code);
+        $this->assertStringContainsString('Status: Terlambat', WaOutbox::firstOrFail()->message);
     }
 
     public function test_departure_message_has_no_status_line(): void

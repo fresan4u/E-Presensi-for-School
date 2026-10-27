@@ -7,7 +7,9 @@ use App\Http\Requests\StoreFaceDescriptorRequest;
 use App\Http\Resources\FaceDescriptorResource;
 use App\Models\Student;
 use App\Models\StudentFaceDescriptor;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class FaceDescriptorController extends Controller
 {
@@ -19,6 +21,58 @@ class FaceDescriptorController extends Controller
     }
 
     public function store(StoreFaceDescriptorRequest $request, Student $student): JsonResponse
+    {
+        return $this->storeFor($request, $student);
+    }
+
+    /**
+     * Daftar sampel wajah milik siswa yang sedang login (portal mobile).
+     */
+    public function mine(Request $request)
+    {
+        /** @var Student $student */
+        $student = $request->user();
+
+        return FaceDescriptorResource::collection(
+            $student->faceDescriptors()->orderBy('sample_no')->get(),
+        );
+    }
+
+    /**
+     * Registrasi wajah mandiri oleh siswa.
+     *
+     * `student_id` selalu diambil dari token, bukan dari URL, sehingga siswa
+     * tidak bisa mendaftarkan wajah untuk akun lain.
+     */
+    public function storeMine(StoreFaceDescriptorRequest $request): JsonResponse
+    {
+        /** @var Student $student */
+        $student = $request->user();
+
+        return $this->storeFor($request, $student);
+    }
+
+    /**
+     * Hapus sampel wajah milik siswa yang sedang login.
+     */
+    public function destroyMine(Request $request, StudentFaceDescriptor $descriptor): JsonResponse
+    {
+        abort_unless($descriptor->student_id === $request->user()?->id, 404);
+
+        $descriptor->delete();
+
+        return response()->json(['message' => 'Sampel wajah dihapus.']);
+    }
+
+    public function destroy(Student $student, StudentFaceDescriptor $descriptor): JsonResponse
+    {
+        abort_unless($descriptor->student_id === $student->id, 404);
+        $descriptor->delete();
+
+        return response()->json(['message' => 'Sampel wajah dihapus.']);
+    }
+
+    private function storeFor(StoreFaceDescriptorRequest $request, Student $student): JsonResponse
     {
         $data = $request->validated();
         $maxSamples = (int) config('face.samples_per_student', 3);
@@ -37,13 +91,16 @@ class FaceDescriptorController extends Controller
             $sampleNo ??= $maxSamples;
         }
 
+        // `captured_by` hanya diisi saat pendaftaran dilakukan admin/petugas.
+        $officer = $request->user() instanceof User ? $request->user() : null;
+
         $model = $student->faceDescriptors()->updateOrCreate(
             ['sample_no' => $sampleNo],
             [
                 'descriptor' => $descriptor,
                 'model_version' => $data['model_version'] ?? config('face.model_version'),
                 'quality_score' => $data['quality_score'] ?? null,
-                'captured_by' => $request->user()?->id,
+                'captured_by' => $officer?->id,
                 'is_active' => true,
             ],
         );
@@ -51,13 +108,5 @@ class FaceDescriptorController extends Controller
         return (new FaceDescriptorResource($model->load('student')))
             ->response()
             ->setStatusCode(201);
-    }
-
-    public function destroy(Student $student, StudentFaceDescriptor $descriptor): JsonResponse
-    {
-        abort_unless($descriptor->student_id === $student->id, 404);
-        $descriptor->delete();
-
-        return response()->json(['message' => 'Sampel wajah dihapus.']);
     }
 }

@@ -30,17 +30,8 @@
       </NuxtLink>
     </nav>
 
-    <!-- Footer: Pindah panel + Keluar -->
+    <!-- Footer: Keluar -->
     <div class="flex flex-col gap-1 border-t border-white/10 p-3">
-      <!-- Pintasan ke aplikasi petugas (aplikasi terpisah, port 3001) -->
-      <NuxtLink
-        :to="resolvedGateway.to"
-        class="flex items-center gap-3 rounded-md px-4 py-3 text-sm text-white/70 transition-colors duration-150 hover:bg-emerald-800/50 hover:text-white"
-      >
-        <ArrowLeftRight class="h-5 w-5 shrink-0" />
-        <span>{{ resolvedGateway.label }}</span>
-      </NuxtLink>
-
       <button
         type="button"
         class="flex w-full items-center gap-3 rounded-md px-4 py-3 text-sm text-white/70 transition-colors duration-150 hover:bg-emerald-800/50 hover:text-white"
@@ -54,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowLeftRight, Database, LayoutDashboard, LogOut, MapPin, ScanFace, ShieldCheck, UserCog } from '@lucide/vue'
+import { Database, LayoutDashboard, LogOut, MapPin, ScanFace, ShieldCheck } from '@lucide/vue'
 import type { Component } from 'vue'
 
 export interface SidebarItem {
@@ -68,14 +59,12 @@ export interface SidebarItem {
   exact?: boolean
 }
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     /** Item menu navigasi. Default: menu dashboard admin. */
     items?: SidebarItem[]
     /** Teks kecil di bawah nama sistem. */
     subtitle?: string
-    /** Link pintasan di footer (menuju aplikasi petugas). */
-    gateway?: { label: string; to: string }
   }>(),
   {
     items: () => [
@@ -83,7 +72,6 @@ const props = withDefaults(
       { label: 'Data Siswa', to: '/siswa', icon: Database },
       { label: 'Registrasi Wajah', to: '/registrasi-wajah', icon: ScanFace },
       { label: 'Lokasi Sekolah', to: '/lokasi-sekolah', icon: MapPin },
-      { label: 'Kelola Petugas', to: '/kelola-petugas', icon: UserCog },
     ],
     subtitle: 'Dashboard Admin',
   },
@@ -91,20 +79,6 @@ const props = withDefaults(
 
 const route = useRoute()
 const { logout } = useAuth()
-const config = useRuntimeConfig()
-
-/*
- * Panel Petugas kini aplikasi terpisah (Presensi_petugas, port 3001), jadi
- * pintasannya mengarah ke URL eksternal dari runtimeConfig. Bisa ditimpa
- * lewat prop `gateway`.
- */
-const resolvedGateway = computed(
-  () =>
-    props.gateway ?? {
-      label: 'Panel Petugas',
-      to: (config.public.petugasUrl as string | undefined) || '/petugas',
-    },
-)
 
 const isActive = (item: SidebarItem) => {
   if (item.exact) return route.path === item.to

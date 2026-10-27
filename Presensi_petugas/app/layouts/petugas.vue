@@ -10,7 +10,6 @@
       class="max-md:hidden"
       :items="navItems"
       subtitle="Panel Petugas"
-      :gateway="gateway"
     />
 
     <div class="flex min-w-0 flex-1 flex-col md:overflow-hidden">
@@ -86,7 +85,6 @@ interface NavItem {
 }
 
 const route = useRoute()
-const config = useRuntimeConfig()
 const { logout } = useAuth()
 
 const navItems: NavItem[] = [
@@ -95,12 +93,6 @@ const navItems: NavItem[] = [
   { label: 'Rekap Absensi', to: '/petugas/rekap-harian', icon: ClipboardList },
   { label: 'Data Absensi', to: '/petugas/data-absensi', icon: CalendarCheck },
 ]
-
-/** Pintasan ke panel admin (aplikasi terpisah, port 3000). */
-const gateway = {
-  label: 'Panel Admin',
-  to: (config.public.adminUrl as string | undefined) || 'http://localhost:3000',
-}
 
 const pageTitles: Record<string, string> = {
   '/petugas': 'Dashboard',

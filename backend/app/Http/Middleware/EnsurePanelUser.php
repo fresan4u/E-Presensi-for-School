@@ -17,7 +17,17 @@ class EnsurePanelUser
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->user() instanceof User) {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            abort(403, 'Akses hanya untuk admin atau petugas.');
+        }
+
+        // Cek role: hanya admin atau petugas yang bisa akses endpoint panel
+        $allowedRoles = ['admin', 'petugas'];
+        $userRole = $user->role ? $user->role->name : null;
+
+        if (! in_array($userRole, $allowedRoles)) {
             abort(403, 'Akses hanya untuk admin atau petugas.');
         }
 

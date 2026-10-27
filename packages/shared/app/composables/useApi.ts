@@ -402,5 +402,19 @@ export const useApi = () => {
           ...(lng !== null && lng !== undefined ? { lng } : {}),
         },
       }),
+    studentFaceDescriptors: () =>
+      client<Collection<ApiFaceDescriptor>>('/student/face-descriptors'),
+    studentRegisterFace: (
+      descriptor: number[],
+      options: { sample_no?: number; quality_score?: number } = {},
+    ) =>
+      client<Item<ApiFaceDescriptor>>('/student/face-descriptors', {
+        method: 'POST',
+        body: { descriptor, ...options },
+      }),
+    studentDeleteFace: (descriptorId: number) =>
+      client<{ message: string }>(`/student/face-descriptors/${descriptorId}`, {
+        method: 'DELETE',
+      }),
   }
 }

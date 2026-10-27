@@ -447,19 +447,17 @@ class AttendanceController extends Controller
     /**
      * Status kehadiran sebuah sesi absensi.
      *
-     * SEMENTARA (mode demo): setiap absensi selalu tercatat `hadir` tanpa
-     * memperhitungkan `boundary_time`, supaya demo tidak bergantung pada jam
-     * tertentu. Blok pembanding waktu di bawah sengaja dikomentari dan harus
-     * dipulihkan setelah demo selesai.
+     * Sesi `masuk` yang melewati `boundary_time` dicatat `terlambat`; sesi
+     * lain (termasuk `pulang`) selalu `hadir`.
      */
     private function resolveStatus(AttendanceSession $session, Carbon $at): AttendanceStatus
     {
-        // if ($session->code === 'masuk' && $session->boundary_time) {
-        //     $boundary = Carbon::parse($at->toDateString().' '.$session->boundary_time);
-        //     $code = $at->greaterThan($boundary) ? 'terlambat' : 'hadir';
-        //
-        //     return AttendanceStatus::where('code', $code)->firstOrFail();
-        // }
+        if ($session->code === 'masuk' && $session->boundary_time) {
+            $boundary = Carbon::parse($at->toDateString().' '.$session->boundary_time);
+            $code = $at->greaterThan($boundary) ? 'terlambat' : 'hadir';
+
+            return AttendanceStatus::where('code', $code)->firstOrFail();
+        }
 
         return AttendanceStatus::where('code', 'hadir')->firstOrFail();
     }

@@ -104,6 +104,12 @@ Route::prefix('v1')->group(function () {
         // Riwayat absensi milik siswa yang login (student_id dari token).
         Route::get('/student/attendances', [StudentAttendanceController::class, 'index']);
 
+        // Registrasi wajah mandiri (student_id selalu dari token).
+        Route::get('/student/face-descriptors', [FaceDescriptorController::class, 'mine']);
+        Route::post('/student/face-descriptors', [FaceDescriptorController::class, 'storeMine'])
+            ->middleware('throttle:20,1');
+        Route::delete('/student/face-descriptors/{descriptor}', [FaceDescriptorController::class, 'destroyMine']);
+
         // Absensi mandiri: wajah diverifikasi 1:1 terhadap akun yang login.
         Route::post('/student/attendance/scan', [AttendanceController::class, 'scanSelf'])
             ->middleware('throttle:30,1');

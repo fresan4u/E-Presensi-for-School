@@ -15,57 +15,6 @@
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-4 sm:justify-end">
-        <div class="flex flex-col gap-1">
-          <!-- Sesi otomatis dari jam; petugas bisa override manual bila perlu -->
-          <div class="flex items-center gap-2">
-            <div class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
-              <button
-                v-for="opt in sessionOptions"
-                :key="opt.value"
-                type="button"
-                class="px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="!manualSession"
-                :class="[
-                  opt.value !== 'masuk' ? 'border-l border-gray-200' : '',
-                  session === opt.value
-                    ? 'bg-emerald-900 text-white'
-                    : 'bg-white text-gray-600 hover:bg-slate-50',
-                ]"
-                @click="switchSession(opt.value)"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-xs font-semibold transition-colors"
-              :class="manualSession
-                ? 'border-amber-300 bg-amber-50 text-amber-800'
-                : 'border-gray-200 bg-white text-gray-500 hover:bg-slate-50'"
-              :title="manualSession ? 'Kembali ke sesi otomatis' : 'Pilih sesi manual (pulang cepat/sakit)'"
-              @click="toggleManualSession"
-            >
-              {{ manualSession ? 'Manual' : 'Otomatis' }}
-            </button>
-          </div>
-          <p class="flex items-center gap-1.5 text-xs font-medium text-red-600">
-            <Clock class="h-3.5 w-3.5" />
-            <template v-if="manualSession">Override manual petugas</template>
-            <template v-else>
-              Sesi otomatis · batas {{ session === 'masuk' ? 'masuk' : 'pulang' }} {{ boundaryTime }}
-            </template>
-          </p>
-        </div>
-
-        <!-- Jam digital + tanggal -->
-        <div class="flex flex-col items-end">
-          <span class="text-2xl font-bold tabular-nums tracking-tight text-slate-800 sm:text-3xl">
-            {{ clockTime }}
-            <span class="text-sm font-semibold text-gray-500">WIB</span>
-          </span>
-          <span class="text-xs text-gray-500">{{ todayLabel }}</span>
-        </div>
-
         <!-- Keluar dari mode kiosk (dengan konfirmasi) -->
         <button
           type="button"
@@ -354,7 +303,6 @@
 import {
   CameraOff,
   CheckCircle2,
-  Clock,
   Fingerprint,
   Loader2,
   LogOut,
@@ -407,11 +355,6 @@ const modeOptions = [
   { value: 'fingerprint', label: 'Fingerprint', icon: Fingerprint },
 ] as const
 
-const sessionOptions = [
-  { value: 'masuk', label: 'Masuk' },
-  { value: 'pulang', label: 'Pulang' },
-] as const
-
 const {
   videoRef,
   status: faceStatus,
@@ -424,16 +367,14 @@ const {
 } = useFaceScanner()
 
 const mode = ref<ScanMode>('face')
+/** Sesi mengikuti jam server secara otomatis (tidak bisa di-override manual). */
 const session = ref<Session>('masuk')
-/** Override manual: petugas memaksa sesi sendiri (kasus pulang cepat/sakit). */
-const manualSession = ref(false)
 const logs = ref<LogItem[]>([])
 const result = ref<ScanResultView | null>(null)
 const scanError = ref('')
 const fingerprintScanning = ref(false)
 const processing = ref(false)
 const autoScan = ref(true)
-const boundaryMap = ref<Record<Session, string>>({ masuk: '--:--', pulang: '--:--' })
 /** Jendela absen dari server (batas jam). */
 const window = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
 const now = ref(new Date())
@@ -453,23 +394,12 @@ const clockFormat = new Intl.DateTimeFormat('id-ID', {
   hour12: false,
 })
 
-const dateFormat = new Intl.DateTimeFormat('id-ID', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-})
-
 const longDateFormat = new Intl.DateTimeFormat('id-ID', {
   weekday: 'long',
   day: 'numeric',
   month: 'long',
   year: 'numeric',
 })
-
-const clockTime = computed(() => clockFormat.format(now.value))
-const todayLabel = computed(() => dateFormat.format(now.value))
-const boundaryTime = computed(() => boundaryMap.value[session.value])
 
 /** Menit sejak tengah malam dari "HH:MM". */
 const keMenit = (jam: string) => {
@@ -488,7 +418,7 @@ const sesiOtotomatis = computed<Session>(() => {
 watch(
   sesiOtotomatis,
   (next) => {
-    if (manualSession.value || next === session.value) return
+    if (next === session.value) return
     session.value = next
     loadHistory()
   },
@@ -558,15 +488,8 @@ const mapScan = (res: ApiScanResult): ScanResultView => {
 const loadBoundary = async () => {
   try {
     const res = await api.meta()
-    const map: Record<Session, string> = { masuk: '--:--', pulang: '--:--' }
-    for (const item of res.data.attendance_sessions) {
-      if ((item.code === 'masuk' || item.code === 'pulang') && item.boundary_time) {
-        map[item.code] = item.boundary_time.slice(0, 5)
-      }
-    }
-    boundaryMap.value = map
     window.value = res.data.attendance_window
-    // Set sesi awal dari jam server (sebelum override manual menyala).
+    // Set sesi awal dari jam server.
     session.value = sesiOtotomatis.value
   } catch {
     // Info batas absen opsional; abaikan bila gagal.
@@ -602,8 +525,13 @@ watch(faceResult, async (detected) => {
     const res = await api.scan(detected.descriptor, session.value, detected.photo)
     result.value = mapScan(res)
 
-    const item = toLogItem(res.data)
+    // Server yang menentukan apakah absensi baru dibuat atau sudah ada.
+    const item = { ...toLogItem(res.data), created: res.meta.created }
     logs.value = [item, ...logs.value.filter((log) => log.id !== item.id)].slice(0, 50)
+
+    scanError.value = res.meta.created
+      ? ''
+      : 'Siswa ini sudah absen pada sesi ini. Absensi sebelumnya yang ditampilkan.'
   } catch (error) {
     result.value = null
     if ((error as { data?: { code?: string } })?.data?.code === 'face_not_recognized') {
@@ -687,26 +615,6 @@ const switchMode = async (next: ScanMode) => {
     await nextTick()
     await initFace()
     if (faceStatus.value === 'ready') startScan()
-  }
-}
-
-const switchSession = async (next: Session) => {
-  if (next === session.value) return
-  session.value = next
-  scanError.value = ''
-  result.value = null
-  await loadHistory()
-}
-
-/**
- * Aktifkan/nonaktifkan override manual. Saat dimatikan, sesi kembali mengikuti
- * jam server supaya alur normal tetap otomatis.
- */
-const toggleManualSession = () => {
-  manualSession.value = !manualSession.value
-  if (!manualSession.value && sesiOtotomatis.value !== session.value) {
-    session.value = sesiOtotomatis.value
-    loadHistory()
   }
 }
 

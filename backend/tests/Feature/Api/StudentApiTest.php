@@ -181,6 +181,9 @@ class StudentApiTest extends TestCase
 
     public function test_student_pin_is_not_returned_to_anonymous_requests(): void
     {
+        // Lepas sesi Sanctum dari setUp agar request benar-benar anonim.
+        $this->app['auth']->forgetGuards();
+
         $response = $this->getJson('/api/v1/students');
 
         $response->assertUnauthorized();
