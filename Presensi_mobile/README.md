@@ -29,7 +29,10 @@ Butuh backend Laravel di `http://127.0.0.1:8000` (diproxy lewat `routeRules`
 4. **Scan Wajah** (`/siswa/scan`) — pilih sesi (masuk/pulang), kamera mendeteksi
    wajah lalu descriptor dikirim ke `POST /student/attendance/scan`.
 5. **Berhasil/Gagal** (`/siswa/berhasil`, `/siswa/gagal`).
-6. **Riwayat** (`/siswa/riwayat`) & **Profil** (`/siswa/profil`, ganti PIN & keluar).
+6. **Registrasi Wajah** (`/siswa/registrasi-wajah`) — daftarkan 3 sampel wajah,
+   dibuka dari kartu di halaman Profil. Kartu itu otomatis hilang setelah semua
+   sampel terisi.
+7. **Riwayat** (`/siswa/riwayat`) & **Profil** (`/siswa/profil`, ganti PIN & keluar).
 
 Guard route ada di `app/middleware/student-auth.global.ts`: halaman `/siswa/**`
 selain login wajib punya token, dan PIN default memaksa ke halaman ganti PIN.
@@ -43,6 +46,8 @@ selain login wajib punya token, dan PIN default memaksa ke halaman ganti PIN.
 | PUT | `/student/pin` | Ganti PIN |
 | POST | `/student/logout` | Cabut token |
 | POST | `/student/attendance/scan` | Absensi wajah 1:1 |
+| GET | `/student/face-descriptors` | Sampel wajah siswa login |
+| POST | `/student/face-descriptors` | Simpan satu sampel wajah |
 | GET | `/attendances?student_id=...` | Riwayat/beranda |
 
 Token disimpan di cookie `presensi-student-token` dan dipasang otomatis sebagai
