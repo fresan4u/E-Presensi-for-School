@@ -190,6 +190,20 @@ class StudentApiTest extends TestCase
         $this->assertArrayNotHasKey('pin', (array) $response->json('data.0', []));
     }
 
+    /**
+     * Proxy Nitro/Vercel tidak selalu meneruskan header `Accept: application/json`.
+     * Request API anonim harus tetap dijawab 401 JSON, bukan 500 karena
+     * middleware mencoba redirect ke route `login` yang tidak ada.
+     */
+    public function test_anonymous_api_request_without_json_accept_returns_401(): void
+    {
+        $this->app['auth']->forgetGuards();
+
+        $this->get('/api/v1/students', ['Accept' => 'text/html'])
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'Unauthenticated.');
+    }
+
     public function test_admin_can_create_student_with_explicit_pin(): void
     {
         $this->postJson('/api/v1/students', [

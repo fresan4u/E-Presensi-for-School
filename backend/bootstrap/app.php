@@ -13,7 +13,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        /*
+         * Aplikasi ini tidak punya route `login` (autentikasi lewat Sanctum).
+         * Tanpa callback ini, request API tanpa header `Accept: application/json`
+         * (mis. lewat proxy Nitro/Vercel) memicu `route('login')` dan berakhir
+         * 500. Untuk path API, redirect dikosongkan agar handler exception
+         * mengembalikan 401 JSON.
+         */
+        $middleware->redirectGuestsTo(
+            fn (Request $request) => $request->is('api/*') ? null : '/',
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
