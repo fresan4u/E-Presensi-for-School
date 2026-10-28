@@ -14,7 +14,46 @@ set -e
 
 cd "$(dirname "$0")"
 
-cp .env.render .env
+if [ -f .env.render ]; then
+  cp .env.render .env
+elif [ ! -f .env ]; then
+  # Railway's Docker builder may omit dotfiles such as .env.render even when
+  # they are tracked. Build a minimal production config from runtime values so
+  # the container can still boot and Laravel can serve the API.
+  cat > .env <<EOF
+APP_NAME=E-Presensi
+APP_ENV=${APP_ENV:-production}
+APP_KEY=${APP_KEY:-}
+APP_DEBUG=${APP_DEBUG:-false}
+APP_URL=${APP_URL:-https://${RAILWAY_PUBLIC_DOMAIN:-localhost}}
+LOG_CHANNEL=${LOG_CHANNEL:-stderr}
+LOG_LEVEL=${LOG_LEVEL:-error}
+DB_CONNECTION=${DB_CONNECTION:-sqlite}
+SESSION_DRIVER=${SESSION_DRIVER:-database}
+SESSION_LIFETIME=${SESSION_LIFETIME:-120}
+SESSION_ENCRYPT=false
+SESSION_PATH=/
+SESSION_DOMAIN=null
+BROADCAST_CONNECTION=log
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=${QUEUE_CONNECTION:-sync}
+CACHE_STORE=${CACHE_STORE:-database}
+MAIL_MAILER=log
+MAIL_FROM_ADDRESS="hello@example.com"
+MAIL_FROM_NAME="E-Presensi"
+ADMIN_NAME=${ADMIN_NAME:-"Andi Pratama"}
+ADMIN_EMAIL=${ADMIN_EMAIL:-andi.pratama@sekolah.id}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+PETUGAS_NAME=${PETUGAS_NAME:-"Bagus Wijaya"}
+PETUGAS_EMAIL=${PETUGAS_EMAIL:-bagus.wijaya@sekolah.id}
+PETUGAS_PASSWORD=${PETUGAS_PASSWORD:-password}
+STUDENT_NIS=${STUDENT_NIS:-2024000}
+STUDENT_NAME=${STUDENT_NAME:-"Ahmad Fauzi"}
+STUDENT_PIN=${STUDENT_PIN:-2024000}
+WA_ENABLED=${WA_ENABLED:-false}
+APP_TIMEZONE=${APP_TIMEZONE:-Asia/Jakarta}
+EOF
+fi
 
 mkdir -p database
 touch database/database.sqlite
