@@ -5,6 +5,20 @@
     Dashboard ini BUKAN milik petugas — panel petugas ada di Presensi_petugas (:3001).
   -->
   <div class="flex flex-col gap-6">
+    <p
+      v-if="errorMessage"
+      class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+      role="alert"
+    >
+      {{ errorMessage }}
+    </p>
+    <p
+      v-if="loading"
+      class="rounded-md border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+      role="status"
+    >
+      Memuat statistik kehadiran terbaru...
+    </p>
     <!-- Bento Box Layout -->
     <div class="grid grid-cols-12 gap-4">
       <!-- Top Chart Area - Main Chart (Bento Box) -->
@@ -34,7 +48,7 @@
           </div>
         </template>
 
-        <!-- Main Chart (dummy): tren kehadiran per hari -->
+        <!-- Main Chart: tren kehadiran dari data absensi realtime -->
         <line-chart
           class="mt-6"
           :labels="chartData.map((bar) => bar.hari)"
@@ -163,39 +177,76 @@
 <script setup lang="ts">
 import { ClipboardList, UserCheck, UserX, Users } from '@lucide/vue'
 import type { LineChartSeries } from '#layers/shared/app/components/ui/LineChart.vue'
+import type { ApiAttendance } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: 'default',
   title: 'Dashboard',
 })
 
-const activeTimeframe = ref('Month')
+const api = useApi()
+
+const activeTimeframe = ref('Week')
+const loading = ref(false)
+const errorMessage = ref('')
+const totalStudents = ref(0)
+const todayAttendances = ref<ApiAttendance[]>([])
+const attendanceHistory = ref<ApiAttendance[]>([])
 
 const timeframes = ['Day', 'Week', 'Month', 'Year']
 
-const stats = [
-  { label: 'Total Siswa', value: '245', trend: '+2% dari kemarin', tone: 'text-emerald-700', icon: Users },
-  { label: 'Hadir Hari Ini', value: '218', trend: '+5% dari kemarin', tone: 'text-emerald-700', icon: UserCheck },
-  { label: 'Izin / Sakit', value: '18', trend: '+1% dari kemarin', tone: 'text-amber-600', icon: ClipboardList },
-  { label: 'Alfa', value: '9', trend: '-2% dari kemarin', tone: 'text-red-600', icon: UserX },
-]
+type ChartPoint = { hari: string; date: string; hadir: number }
 
-const chartData = [
-  { hari: 'Senin', hadir: 85 },
-  { hari: 'Selasa', hadir: 92 },
-  { hari: 'Rabu', hadir: 88 },
-  { hari: 'Kamis', hadir: 94 },
-  { hari: 'Jumat', hadir: 90 },
-  { hari: 'Sabtu', hadir: 78 },
-  { hari: 'Minggu', hadir: 65 },
-]
+const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+
+const toIsoDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+const formatDateLabel = (date: Date, timeframe: string) => {
+  if (timeframe === 'Year') return new Intl.DateTimeFormat('id-ID', { month: 'short' }).format(date)
+  if (timeframe === 'Day') return 'Hari ini'
+  return DAY_LABELS[date.getDay()] ?? ''
+}
+
+const timeframeDays = computed(() => {
+  if (activeTimeframe.value === 'Day') return 1
+  if (activeTimeframe.value === 'Month') return 30
+  if (activeTimeframe.value === 'Year') return 365
+  return 7
+})
+
+const chartData = computed<ChartPoint[]>(() => {
+  const days: ChartPoint[] = []
+  const end = new Date()
+  const count = timeframeDays.value
+  const step = activeTimeframe.value === 'Year' ? 30 : 1
+  const points = activeTimeframe.value === 'Year' ? 12 : count
+
+  for (let index = points - 1; index >= 0; index -= 1) {
+    const date = new Date(end)
+    date.setDate(end.getDate() - index * step)
+    const iso = toIsoDate(date)
+    const records = attendanceHistory.value.filter(
+      (attendance) => attendance.attendance_date === iso && attendance.session.code === 'masuk',
+    )
+    const present = records.filter((attendance) => ['hadir', 'terlambat'].includes(attendance.status.code)).length
+
+    days.push({
+      hari: formatDateLabel(date, activeTimeframe.value),
+      date: iso,
+      hadir: totalStudents.value ? Math.round((present / totalStudents.value) * 100) : 0,
+    })
+  }
+
+  return days
+})
 
 const chartSeries = computed<LineChartSeries[]>(() => [
   {
     label: 'Hadir',
     color: '#064e3b',
     area: true,
-    values: chartData.map((bar) => bar.hadir),
+    values: chartData.value.map((bar) => bar.hadir),
   },
 ])
 
@@ -205,10 +256,10 @@ const formatPercent = (value: number) => {
 }
 
 const chartSummary = computed(() => {
-  const values = chartData.map((bar) => bar.hadir)
-  const average = values.reduce((total, value) => total + value, 0) / values.length
-  const highest = chartData.reduce((best, item) => (item.hadir > best.hadir ? item : best))
-  const lowest = chartData.reduce((worst, item) => (item.hadir < worst.hadir ? item : worst))
+  const values = chartData.value.map((bar) => bar.hadir)
+  const average = values.reduce((total, value) => total + value, 0) / Math.max(1, values.length)
+  const highest = chartData.value.reduce((best, item) => (item.hadir > best.hadir ? item : best), { hari: '-', date: '', hadir: 0 })
+  const lowest = chartData.value.reduce((worst, item) => (item.hadir < worst.hadir ? item : worst), { hari: '-', date: '', hadir: 0 })
 
   return [
     { label: 'Rata-rata', value: formatPercent(average), hint: 'kehadiran minggu ini' },
@@ -217,20 +268,34 @@ const chartSummary = computed(() => {
   ]
 })
 
-const perubahanKehadiran = [
-  { type: 'up', value: 70 },
-  { type: 'up', value: 85 },
-  { type: 'down', value: 40 },
-  { type: 'up', value: 90 },
-  { type: 'down', value: 35 },
-  { type: 'up', value: 75 },
-]
+const presentToday = computed(() =>
+  todayAttendances.value.filter((attendance) => ['hadir', 'terlambat'].includes(attendance.status.code)).length,
+)
+const izinSakitToday = computed(() =>
+  todayAttendances.value.filter((attendance) => ['izin', 'sakit'].includes(attendance.status.code)).length,
+)
+const alfaToday = computed(() => Math.max(0, totalStudents.value - presentToday.value - izinSakitToday.value))
+const attendancePercent = computed(() =>
+  totalStudents.value ? Math.round((presentToday.value / totalStudents.value) * 100) : 0,
+)
 
-const komposisiKehadiran = [
-  { label: 'Hadir', value: 89 },
-  { label: 'Izin / Sakit', value: 7 },
-  { label: 'Alfa', value: 4 },
-]
+const stats = computed(() => [
+  { label: 'Total Siswa', value: String(totalStudents.value), trend: 'data realtime', tone: 'text-emerald-700', icon: Users },
+  { label: 'Hadir Hari Ini', value: String(presentToday.value), trend: `${attendancePercent.value}% dari total siswa`, tone: 'text-emerald-700', icon: UserCheck },
+  { label: 'Izin / Sakit', value: String(izinSakitToday.value), trend: 'tercatat hari ini', tone: 'text-amber-600', icon: ClipboardList },
+  { label: 'Alfa', value: String(alfaToday.value), trend: 'belum absen hari ini', tone: 'text-red-600', icon: UserX },
+])
+
+const perubahanKehadiran = computed(() => chartData.value.slice(-7).map((item, index, values) => ({
+  type: index === 0 || item.hadir >= (values[index - 1]?.hadir ?? item.hadir) ? 'up' : 'down',
+  value: item.hadir,
+})))
+
+const komposisiKehadiran = computed(() => [
+  { label: 'Hadir', value: attendancePercent.value },
+  { label: 'Izin / Sakit', value: totalStudents.value ? Math.round((izinSakitToday.value / totalStudents.value) * 100) : 0 },
+  { label: 'Alfa', value: totalStudents.value ? Math.round((alfaToday.value / totalStudents.value) * 100) : 0 },
+])
 
 /** Warna progress per status kehadiran. */
 const komposisiTone = (label: string) => {
@@ -242,10 +307,33 @@ const komposisiTone = (label: string) => {
   return map[label] ?? 'bg-emerald-900'
 }
 
-const ringkasanSekolah = [
-  { label: 'Rata-rata Kehadiran (Minggu Ini)', value: '89,4%', accent: true },
-  { label: 'Total Izin / Sakit (Bulan Ini)', value: '18 Siswa', accent: false },
-  { label: 'Alfa (Bulan Ini)', value: '9 Siswa', accent: false },
-  { label: 'Hari Efektif (Bulan Ini)', value: '20 Hari', accent: false },
-]
+const ringkasanSekolah = computed(() => [
+  { label: 'Rata-rata Kehadiran', value: formatPercent(chartData.value.reduce((sum, item) => sum + item.hadir, 0) / Math.max(1, chartData.value.length)), accent: true },
+  { label: 'Total Izin / Sakit Hari Ini', value: `${izinSakitToday.value} Siswa`, accent: false },
+  { label: 'Alfa Hari Ini', value: `${alfaToday.value} Siswa`, accent: false },
+  { label: 'Rentang Grafik', value: activeTimeframe.value, accent: false },
+])
+
+const loadDashboard = async () => {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const today = toIsoDate(new Date())
+    const [students, todayResponse, historyResponse] = await Promise.all([
+      api.students({ status: 'aktif', per_page: 1 }),
+      api.attendances({ date: today, session: 'masuk', per_page: 200 }),
+      api.attendances({ per_page: 200 }),
+    ])
+
+    totalStudents.value = students.meta.total
+    todayAttendances.value = todayResponse.data
+    attendanceHistory.value = historyResponse.data
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadDashboard)
 </script>

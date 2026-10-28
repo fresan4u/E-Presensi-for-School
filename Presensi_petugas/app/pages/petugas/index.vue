@@ -113,20 +113,15 @@
     <section class="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <base-card
         class="lg:col-span-2"
-        title="Aktivitas Absensi"
-        subtitle="Tren hadir vs terlambat, 7 hari terakhir"
+        title="Statistik Kehadiran"
+        subtitle="Tren persentase kehadiran siswa per hari"
       >
         <template #actions>
           <div class="flex items-center gap-4 text-xs text-gray-500">
             <span class="flex items-center gap-1.5">
               <span class="h-0.5 w-4 rounded-full bg-emerald-900" />
               Hadir
-              <span class="font-semibold tabular-nums text-slate-700">{{ chartTotals.hadir }}</span>
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="h-0.5 w-4 rounded-full bg-amber-500" />
-              Terlambat
-              <span class="font-semibold tabular-nums text-slate-700">{{ chartTotals.terlambat }}</span>
+              <span class="font-semibold tabular-nums text-slate-700">{{ chartSummary.average }}%</span>
             </span>
           </div>
         </template>
@@ -135,7 +130,9 @@
           <line-chart
             :labels="chartDays.map((day) => day.day)"
             :series="chartSeries"
-            :max-value="chartMax"
+            :max-value="100"
+            value-suffix="%"
+            height-class="h-72 md:h-80"
           />
         </div>
 
@@ -194,7 +191,7 @@ const terlambatToday = ref(0)
 const boundaryTime = ref<string | null>(null)
 const errorMessage = ref('')
 const recentRows = ref<Record<string, unknown>[]>([])
-const chartDays = ref<Array<{ day: string; hadir: number; terlambat: number }>>([])
+const chartDays = ref<Array<{ day: string; hadir: number }>>([])
 
 const recentColumns: TableColumn[] = [
   { key: 'name', label: 'Nama' },
@@ -228,7 +225,7 @@ const toRecentRow = (attendance: ApiAttendance) => {
 
 /** Bangun data grafik 7 hari terakhir dari daftar absensi (sesi masuk). */
 const buildChart = (attendances: ApiAttendance[]) => {
-  const days: Array<{ day: string; hadir: number; terlambat: number }> = []
+  const days: Array<{ day: string; hadir: number }> = []
 
   for (let offset = 6; offset >= 0; offset--) {
     const date = new Date()
@@ -238,20 +235,15 @@ const buildChart = (attendances: ApiAttendance[]) => {
       (attendance) => attendance.attendance_date === iso && attendance.session.code === 'masuk',
     )
 
+    const present = masuk.filter((attendance) => ['hadir', 'terlambat'].includes(attendance.status.code)).length
     days.push({
       day: DAY_LABELS[date.getDay()] ?? '',
-      hadir: masuk.filter((attendance) => attendance.status.code === 'hadir').length,
-      terlambat: masuk.filter((attendance) => attendance.status.code === 'terlambat').length,
+      hadir: totalStudents.value ? Math.round((present / totalStudents.value) * 100) : 0,
     })
   }
 
   chartDays.value = days
 }
-
-const chartMax = computed(() => {
-  const values = chartDays.value.flatMap((day) => [day.hadir, day.terlambat])
-  return Math.max(1, ...values)
-})
 
 const chartSeries = computed<LineChartSeries[]>(() => [
   {
@@ -260,19 +252,15 @@ const chartSeries = computed<LineChartSeries[]>(() => [
     area: true,
     values: chartDays.value.map((day) => day.hadir),
   },
-  {
-    label: 'Terlambat',
-    color: '#f59e0b',
-    values: chartDays.value.map((day) => day.terlambat),
-  },
 ])
 
-const chartTotals = computed(() => ({
-  hadir: chartDays.value.reduce((total, day) => total + day.hadir, 0),
-  terlambat: chartDays.value.reduce((total, day) => total + day.terlambat, 0),
+const chartSummary = computed(() => ({
+  average: Math.round(
+    chartDays.value.reduce((total, day) => total + day.hadir, 0) / Math.max(1, chartDays.value.length),
+  ),
 }))
 
-const hasChartData = computed(() => chartDays.value.some((day) => day.hadir || day.terlambat))
+const hasChartData = computed(() => chartDays.value.some((day) => day.hadir))
 
 const tidakHadir = computed(() =>
   Math.max(0, totalStudents.value - hadirToday.value - terlambatToday.value),
