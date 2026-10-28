@@ -55,21 +55,38 @@
         </div>
 
         <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".csv,text/csv"
-            class="hidden"
-            @change="onFileChange"
-          />
+          <!--
+            Import CSV disembunyikan sementara (permintaan sekolah): data siswa
+            diisi satu per satu lewat "Tambah Siswa" / impor dari panel lain.
+            Ubah `tampilkanImportCsv` ke `true` untuk memunculkannya lagi.
+          -->
+          <template v-if="tampilkanImportCsv">
+            <input
+              ref="fileInput"
+              type="file"
+              accept=".csv,text/csv"
+              class="hidden"
+              @change="onFileChange"
+            />
 
-          <base-button variant="outline" :loading="importing" @click="fileInput?.click()">
-            <Upload class="h-4 w-4" />
-            Import CSV
-          </base-button>
+            <base-button
+              variant="outline"
+              :loading="importing"
+              class="whitespace-nowrap px-3 py-2 text-xs"
+              @click="fileInput?.click()"
+            >
+              <FileSpreadsheet class="h-4 w-4 shrink-0" />
+              Import CSV
+            </base-button>
+          </template>
 
-          <base-button variant="solid" data-testid="tambah-siswa" @click="openCreate">
-            <Plus class="h-4 w-4" />
+          <base-button
+            variant="solid"
+            data-testid="tambah-siswa"
+            class="whitespace-nowrap px-3 py-2 text-xs"
+            @click="openCreate"
+          >
+            <UserPlus class="h-4 w-4 shrink-0" />
             Tambah Siswa
           </base-button>
         </div>
@@ -120,9 +137,9 @@
               </th>
             </tr>
           </thead>
-          <tbody class="bg-white">
+          <tbody class="bg-white" @click="handleStudentNameClick">
             <tr v-if="tableLoading">
-              <td colspan="6" class="px-6 py-10 text-center text-sm text-gray-500">
+              <td colspan="5" class="px-6 py-10 text-center text-sm text-gray-500">
                 <span class="inline-flex items-center gap-2">
                   <Loader2 class="h-4 w-4 animate-spin" />
                   Memuat data siswa...
@@ -136,22 +153,16 @@
               :key="siswa.id"
               class="border-b border-gray-100 transition-colors last:border-0 hover:bg-slate-50/60"
             >
-              <td class="px-6 py-4 text-sm font-medium text-slate-800">
+              <td
+                class="cursor-pointer px-6 py-4 text-sm font-medium text-slate-800 transition-colors hover:text-emerald-900 hover:underline"
+                :data-student-edit="siswa.id"
+                :title="`Edit data ${siswa.full_name}`"
+              >
                 {{ siswa.full_name }}
               </td>
               <td class="px-6 py-4 text-sm text-gray-600">{{ siswa.nis }}</td>
               <td class="px-6 py-4 text-sm text-gray-600">
                 {{ siswa.classroom?.name ?? '-' }}
-              </td>
-              <td class="px-6 py-4">
-                <span
-                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                  :class="siswa.status?.code === 'aktif'
-                    ? 'bg-emerald-50 text-emerald-800'
-                    : 'bg-slate-100 text-slate-600'"
-                >
-                  {{ siswa.status?.label ?? '-' }}
-                </span>
               </td>
               <td class="px-6 py-4">
                 <span
@@ -176,15 +187,6 @@
                   </button>
                   <button
                     type="button"
-                    class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-slate-100 hover:text-slate-800"
-                    :aria-label="`Edit ${siswa.full_name}`"
-                    title="Edit data"
-                    @click="openEdit(siswa)"
-                  >
-                    <Pencil class="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
                     class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
                     :aria-label="`Hapus ${siswa.full_name}`"
                     title="Hapus siswa"
@@ -197,7 +199,7 @@
             </tr>
 
             <tr v-if="!tableLoading && !tableStudents.length">
-              <td colspan="6" class="px-6 py-10 text-center text-sm text-gray-500">
+              <td colspan="5" class="px-6 py-10 text-center text-sm text-gray-500">
                 Tidak ada data yang cocok. Tambah siswa baru atau ubah kata kunci.
               </td>
             </tr>
@@ -459,15 +461,24 @@
 
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium text-slate-800">Nama Lengkap</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <UserRound class="h-4 w-4 text-emerald-700" />
+            Nama Lengkap
+          </span>
           <input v-model="form.full_name" type="text" class="input" placeholder="Nama siswa" />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium text-slate-800">NIS</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <Hash class="h-4 w-4 text-emerald-700" />
+            NIS
+          </span>
           <input v-model="form.nis" type="text" class="input" placeholder="Nomor induk siswa" />
         </label>
         <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-slate-800">Kelas</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <School class="h-4 w-4 text-emerald-700" />
+            Kelas
+          </span>
           <select v-model="form.classroom_id" class="input">
             <option :value="null">Belum ditentukan</option>
             <option v-for="room in classrooms" :key="room.id" :value="room.id">
@@ -476,11 +487,42 @@
           </select>
         </label>
         <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-slate-800">Status</span>
-          <select v-model="form.status" class="input">
-            <option value="aktif">Aktif</option>
-            <option value="non_aktif">Non Aktif</option>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <UsersRound class="h-4 w-4 text-emerald-700" />
+            Nama Wali
+          </span>
+          <input
+            v-model="form.guardian_name"
+            type="text"
+            class="input"
+            placeholder="Nama orang tua / wali"
+          />
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <HeartHandshake class="h-4 w-4 text-emerald-700" />
+            Hubungan
+          </span>
+          <select v-model="form.guardian_relationship" class="input">
+            <option value="ayah">Ayah</option>
+            <option value="ibu">Ibu</option>
+            <option value="wali">Wali</option>
           </select>
+        </label>
+        <label class="flex flex-col gap-1.5 sm:col-span-2">
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <Phone class="h-4 w-4 text-emerald-700" />
+            Nomor WhatsApp Wali
+          </span>
+          <input
+            v-model="form.guardian_phone"
+            type="tel"
+            class="input"
+            placeholder="08xxxxxxxxxx"
+          />
+          <span class="text-xs text-slate-400">
+            Bisa dikosongkan. Nomor ini yang dipakai buat notifikasi absensi.
+          </span>
         </label>
       </div>
     </modal>
@@ -492,7 +534,11 @@ import {
   CameraOff,
   CheckCircle2,
   Circle,
+  FileSpreadsheet,
+  Hash,
+  HeartHandshake,
   Loader2,
+  Phone,
   Pencil,
   Plus,
   RotateCcw,
@@ -501,11 +547,14 @@ import {
   Search,
   Trash2,
   TriangleAlert,
-  Upload,
+  UserPlus,
+  UserRound,
   UserSquare,
   Users,
+  UsersRound,
+  School,
 } from '@lucide/vue'
-import type { ApiClassroom, ApiFaceDescriptor, ApiStudent } from '#layers/shared/app/composables/useApi'
+import type { ApiClassroom, ApiFaceDescriptor, ApiStudent, StudentPayload } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: 'default',
@@ -520,7 +569,7 @@ const route = useRoute()
 const maxSamples = 3
 const sampleNumbers = [1, 2, 3]
 const perPage = 10
-const tableHeaders = ['Nama Lengkap', 'NIS', 'Kelas', 'Status', 'Wajah']
+const tableHeaders = ['Nama Lengkap', 'NIS', 'Kelas', 'Wajah']
 
 const tabs = [
   { value: 'siswa', label: 'Data Siswa', icon: Users, testid: 'tab-data-siswa' },
@@ -647,6 +696,13 @@ watch(pickerSearch, () => {
 })
 
 /* ---------- Import CSV ---------- */
+/**
+ * Tombol "Import CSV" disembunyikan sementara atas permintaan sekolah.
+ * Logika impor tetap ada; tinggal ubah flag ini ke `true` untuk menampilkan
+ * kembali tanpa mengubah kode lain.
+ */
+const tampilkanImportCsv = true
+
 const fileInput = ref<HTMLInputElement | null>(null)
 const importing = ref(false)
 
@@ -682,7 +738,9 @@ const form = reactive({
   nis: '',
   full_name: '',
   classroom_id: null as number | null,
-  status: 'aktif',
+  guardian_name: '',
+  guardian_relationship: 'ayah',
+  guardian_phone: '',
 })
 
 const resetForm = () => {
@@ -690,7 +748,9 @@ const resetForm = () => {
     nis: '',
     full_name: '',
     classroom_id: null,
-    status: 'aktif',
+    guardian_name: '',
+    guardian_relationship: 'ayah',
+    guardian_phone: '',
   })
 }
 
@@ -701,14 +761,29 @@ const openCreate = () => {
   isFormOpen.value = true
 }
 
+const handleStudentNameClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  const button = target.closest('[data-student-edit]') as HTMLElement | null
+  if (!button) return
+  const id = Number(button.dataset.studentEdit)
+  if (!id) return
+  const student = tableStudents.value.find((s) => s.id === id)
+  if (student) {
+    openEdit(student)
+  }
+}
+
 const openEdit = (student: ApiStudent) => {
   editingId.value = student.id
   formError.value = ''
+  const primaryGuardian = (student as any).guardians?.find((g: any) => g.is_primary) || (student as any).guardians?.[0]
   Object.assign(form, {
     nis: student.nis ?? '',
     full_name: student.full_name ?? '',
     classroom_id: student.classroom?.id ?? null,
-    status: student.status?.code ?? 'aktif',
+    guardian_name: primaryGuardian?.name ?? '',
+    guardian_relationship: primaryGuardian?.relationship ?? 'ayah',
+    guardian_phone: primaryGuardian?.phone ?? '',
   })
   isFormOpen.value = true
 }
@@ -721,11 +796,22 @@ const submitStudent = async () => {
 
   savingStudent.value = true
   formError.value = ''
-  const payload = {
+  const phone = form.guardian_phone.trim()
+  const payload: StudentPayload = {
     nis: form.nis.trim(),
     full_name: form.full_name.trim(),
     classroom_id: form.classroom_id,
-    status: form.status,
+  }
+
+  if (phone) {
+    payload.guardians = [
+      {
+        name: form.guardian_name.trim() || null,
+        relationship: form.guardian_relationship,
+        phone,
+        is_primary: true,
+      },
+    ]
   }
 
   try {

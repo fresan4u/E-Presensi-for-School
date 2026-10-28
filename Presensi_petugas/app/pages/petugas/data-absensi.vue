@@ -14,8 +14,8 @@
           </base-input>
         </div>
 
-        <!-- Export -->
-        <div class="flex lg:justify-end">
+        <!-- Export (disembunyikan: sudah dipindah ke halaman Rekap Absensi) -->
+        <div v-if="tampilkanExport" class="flex lg:justify-end">
           <base-button variant="solid" data-testid="export-csv" @click="exportCsv">
             <Download class="h-4 w-4" />
             Export
@@ -24,7 +24,21 @@
       </div>
 
       <!-- Filter dropdown -->
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <label class="flex flex-col gap-2">
+          <span class="text-sm font-medium text-slate-800">Tahun Ajaran</span>
+          <select
+            v-model="filters.academicYearId"
+            class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus:border-emerald-900 focus:outline-none"
+            :disabled="loadingYears"
+          >
+            <option :value="null">Semua Tahun Ajaran</option>
+            <option v-for="year in academicYears" :key="year.id" :value="year.id">
+              {{ year.label }}<template v-if="year.is_active"> (Aktif)</template>
+            </option>
+          </select>
+        </label>
+
         <label class="flex flex-col gap-2">
           <span class="text-sm font-medium text-slate-800">Kelas</span>
           <select
@@ -121,7 +135,7 @@
 <script setup lang="ts">
 import { Download, Pencil, Search, TriangleAlert } from '@lucide/vue'
 import type { TableColumn } from '#layers/shared/app/components/table/DataTable.vue'
-import type { ApiAttendance, ApiClassroom } from '#layers/shared/app/composables/useApi'
+import type { ApiAcademicYear, ApiAttendance, ApiClassroom } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: 'petugas',
@@ -132,10 +146,14 @@ const api = useApi()
 
 /* ---------- Filter ---------- */
 const filters = reactive({
+  academicYearId: null as number | null,
   classroomId: null as number | null,
   method: '',
   status: '',
 })
+
+const academicYears = ref<ApiAcademicYear[]>([])
+const loadingYears = ref(false)
 
 const methodOptions = (Object.keys(METHOD_LABEL) as AttendanceMethod[]).map((value) => ({
   value,
@@ -149,8 +167,16 @@ const statusOptions = ATTENDANCE_STATUSES.map((value) => ({
 
 const classrooms = ref<ApiClassroom[]>([])
 
+/**
+ * Fitur Export CSV & kolom Aksi (edit status) sudah dipindah ke halaman
+ * Rekap Absensi. Kode di sini sengaja dibiarkan utuh — ubah flag ke `true`
+ * untuk memunculkannya lagi di Data Absensi.
+ */
+const tampilkanExport = false
+const tampilkanAksi = false
+
 /* ---------- Kolom tabel ---------- */
-const columns: TableColumn[] = [
+const semuaKolom: TableColumn[] = [
   { key: 'nis', label: 'NIS' },
   { key: 'name', label: 'Nama Siswa' },
   { key: 'kelas', label: 'Kelas' },
@@ -161,6 +187,8 @@ const columns: TableColumn[] = [
   { key: 'status', label: 'Status' },
   { key: 'actions', label: 'Aksi', align: 'right' },
 ]
+
+const columns = semuaKolom.filter((column) => tampilkanAksi || column.key !== 'actions')
 
 /* ---------- Ambil data dari API ---------- */
 const PER_PAGE = 10
@@ -205,6 +233,7 @@ const loadRows = async () => {
   try {
     const res = await api.attendances({
       search: search.value.trim() || undefined,
+      academic_year_id: filters.academicYearId ?? undefined,
       classroom_id: filters.classroomId ?? undefined,
       method: filters.method || undefined,
       status: filters.status || undefined,
@@ -228,6 +257,22 @@ const loadClassrooms = async () => {
   }
 }
 
+const loadAcademicYears = async () => {
+  loadingYears.value = true
+  try {
+    const res = await api.academicYears()
+    academicYears.value = res.data
+
+    // Default ke tahun ajaran aktif; petugas tetap bisa pindah tahun.
+    const active = res.data.find((year) => year.is_active)
+    if (active) filters.academicYearId = active.id
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error)
+  } finally {
+    loadingYears.value = false
+  }
+}
+
 watch(search, () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -247,7 +292,7 @@ const fromRow = computed(() => (totalRows.value === 0 ? 0 : (page.value - 1) * P
 const toRow = computed(() => Math.min(page.value * PER_PAGE, totalRows.value))
 
 const emptyText = computed(() =>
-  search.value.trim() || filters.classroomId || filters.method || filters.status
+  search.value.trim() || filters.academicYearId || filters.classroomId || filters.method || filters.status
     ? 'Tidak ada data yang cocok dengan filter atau pencarianmu.'
     : 'Belum ada data absensi.',
 )
@@ -323,6 +368,7 @@ const handleSaved = async (updated: AttendanceRecord) => {
 const methodLabel = (value: string) => METHOD_LABEL[value as AttendanceMethod] ?? value
 
 onMounted(async () => {
+  await loadAcademicYears()
   await Promise.all([loadRows(), loadClassrooms()])
 })
 

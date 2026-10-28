@@ -1,14 +1,19 @@
 <?php
 
+use App\Http\Controllers\Api\AcademicYearController;
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\AttendanceScheduleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\FaceDescriptorController;
 use App\Http\Controllers\Api\OfficerController;
 use App\Http\Controllers\Api\ReferenceController;
+use App\Http\Controllers\Api\SchoolHolidayController;
 use App\Http\Controllers\Api\SchoolSettingController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\StudentAttendanceController;
 use App\Http\Controllers\Api\StudentAuthController;
 use App\Http\Controllers\Api\StudentController;
+use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsurePanelUser;
 use App\Http\Middleware\EnsureStudent;
 use Illuminate\Http\Request;
@@ -83,14 +88,41 @@ Route::prefix('v1')->group(function () {
         Route::post('/students/{student}/face-descriptors', [FaceDescriptorController::class, 'store']);
         Route::delete('/students/{student}/face-descriptors/{descriptor}', [FaceDescriptorController::class, 'destroy']);
 
-        // Lokasi sekolah (geofencing absensi mandiri siswa)
-        Route::put('/school-location', [SchoolSettingController::class, 'update']);
-
         // Absensi (rekap & pencatatan manual)
         Route::get('/attendances/recap', [AttendanceController::class, 'recap']);
         Route::get('/attendances', [AttendanceController::class, 'index']);
         Route::post('/attendances', [AttendanceController::class, 'store']);
         Route::put('/attendances/{attendance}', [AttendanceController::class, 'update']);
+    });
+
+    /*
+     * Pengaturan global — HANYA admin. Petugas tetap memakai endpoint
+     * operasional di atas, tetapi tidak boleh mengubah konfigurasi sekolah.
+     */
+    Route::middleware(['auth:sanctum', EnsurePanelUser::class, EnsureAdmin::class])->group(function () {
+        Route::get('/settings', [SettingsController::class, 'show']);
+        Route::put('/settings', [SettingsController::class, 'update']);
+        Route::get('/settings/audit', [SettingsController::class, 'audit']);
+
+        // Tahun ajaran: baca boleh petugas, tulis hanya admin.
+        Route::post('/academic-years', [AcademicYearController::class, 'store']);
+        Route::put('/academic-years/{academicYear}', [AcademicYearController::class, 'update']);
+        Route::patch('/academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
+        Route::delete('/academic-years/{academicYear}', [AcademicYearController::class, 'destroy']);
+
+        // Aksi massal siswa per tahun ajaran (nonaktif/aktif/hapus).
+        Route::post('/students/bulk-action', [StudentController::class, 'bulkAction']);
+
+        Route::get('/attendance-schedules', [AttendanceScheduleController::class, 'index']);
+        Route::put('/attendance-schedules', [AttendanceScheduleController::class, 'update']);
+
+        Route::get('/school-holidays', [SchoolHolidayController::class, 'index']);
+        Route::post('/school-holidays', [SchoolHolidayController::class, 'store']);
+        Route::put('/school-holidays/{schoolHoliday}', [SchoolHolidayController::class, 'update']);
+        Route::delete('/school-holidays/{schoolHoliday}', [SchoolHolidayController::class, 'destroy']);
+
+        // Lokasi sekolah (geofencing absensi mandiri siswa).
+        Route::put('/school-location', [SchoolSettingController::class, 'update']);
     });
 
     /*

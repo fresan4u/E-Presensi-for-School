@@ -10,11 +10,14 @@ use App\Models\StudentFaceDescriptor;
  */
 class FaceMatchingService
 {
-    public function __construct(private ?float $threshold = null) {}
+    public function __construct(
+        private SettingsService $settings,
+        private ?float $threshold = null,
+    ) {}
 
     public function threshold(): float
     {
-        return $this->threshold ?? (float) config('face.match_threshold', 0.6);
+        return $this->threshold ?? $this->settings->faceThreshold();
     }
 
     /**

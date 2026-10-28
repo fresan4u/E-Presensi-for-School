@@ -18,6 +18,8 @@ class WaNotifier
      */
     private const array NOTIFIABLE_STATUSES = ['hadir', 'terlambat'];
 
+    public function __construct(private SettingsService $settings) {}
+
     /**
      * Siapkan baris outbox untuk satu absensi baru, lalu antrekan job kirimnya.
      *
@@ -26,7 +28,9 @@ class WaNotifier
      */
     public function queueFor(Attendance $attendance): ?WaOutbox
     {
-        if (! config('wa.enabled')) {
+        // Kill-switch deployment (`WA_ENABLED`) dan saklar admin harus sama-sama
+        // menyala. Bila salah satu mati, absensi tetap tercatat tanpa outbox.
+        if (! config('wa.enabled') || ! $this->settings->waEnabled()) {
             return null;
         }
 

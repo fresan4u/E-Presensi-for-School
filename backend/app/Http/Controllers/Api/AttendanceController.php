@@ -17,7 +17,10 @@ use App\Models\Classroom;
 use App\Models\Student;
 use App\Models\StudentFaceDescriptor;
 use App\Models\WaOutbox;
+use App\Services\AttendanceWindowService;
 use App\Services\FaceMatchingService;
+use App\Services\GeoFenceService;
+use App\Services\SettingsService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,7 +29,12 @@ use Illuminate\Support\Str;
 
 class AttendanceController extends Controller
 {
-    public function __construct(private FaceMatchingService $faceMatcher) {}
+    public function __construct(
+        private FaceMatchingService $faceMatcher,
+        private SettingsService $settings,
+        private AttendanceWindowService $attendanceWindow,
+        private GeoFenceService $geoFence,
+    ) {}
 
     /** Relasi standar untuk resource absensi. */
     private function relations(): array
@@ -45,6 +53,19 @@ class AttendanceController extends Controller
 
         if ($date = $request->query('date')) {
             $query->whereDate('attendance_date', $date);
+        }
+
+        if ($yearId = (int) $request->query('academic_year_id', 0)) {
+            $year = AcademicYear::find($yearId);
+
+            if ($year) {
+                // Rentang tanggal lebih tahan terhadap data lama yang kolom
+                // academic_year_id-nya masih null/salah.
+                $query->whereBetween('attendance_date', [
+                    $year->start_date->toDateString(),
+                    $year->end_date->toDateString(),
+                ]);
+            }
         }
 
         if ($studentId = (int) $request->query('student_id', 0)) {
@@ -147,6 +168,8 @@ class AttendanceController extends Controller
 
             return [
                 'id' => $student->id,
+                // Diperlukan panel petugas untuk mengedit/mengoreksi absensi siswa.
+                'attendance_id' => $attendance?->id,
                 'nis' => $student->nis,
                 'full_name' => $student->full_name,
                 'status' => ['code' => $statusCode, 'label' => $statusLabel],
@@ -243,13 +266,41 @@ class AttendanceController extends Controller
         $data = $request->validated();
         $at = Carbon::now();
 
-        $session = $this->resolveSession($at);
+        $window = $this->attendanceWindow->for($at);
 
-        if ($session === null) {
+        if (! $window['is_open']) {
             return response()->json([
-                'message' => $this->closedMessage($at),
+                'message' => $window['message'],
                 'code' => 'attendance_closed',
+                'reason' => $window['reason'],
+                'holiday' => $window['holiday']?->name,
             ], 422);
+        }
+
+        $session = AttendanceSession::where('code', $window['session'])->firstOrFail();
+
+        $latitude = isset($data['lat']) ? (float) $data['lat'] : null;
+        $longitude = isset($data['lng']) ? (float) $data['lng'] : null;
+        $accuracy = isset($data['accuracy']) ? (float) $data['accuracy'] : null;
+
+        // Geofence ditegakkan di server. Klien tetap mengirim koordinat,
+        // tetapi keputusan akhir ada di sini.
+        if ($this->settings->geofenceEnabled()) {
+            $geo = $this->geoFence->evaluate($latitude, $longitude);
+
+            if (! $geo['ok']) {
+                return response()->json([
+                    'message' => $geo['message'],
+                    'code' => $geo['code'],
+                    'distance_meter' => $geo['distance_meter'],
+                    'radius_meter' => $geo['radius_meter'],
+                ], 422);
+            }
+
+            $distanceMeter = $geo['distance_meter'];
+        } else {
+            // Geofence mati: koordinat tetap dicatat sebagai jejak bila ada.
+            $distanceMeter = $this->geoFence->distanceFromSchool($latitude, $longitude);
         }
 
         /** @var Student $student */
@@ -272,8 +323,11 @@ class AttendanceController extends Controller
             $match['descriptor'],
             $match['distance'],
             $photoPath,
-            isset($data['lat']) ? (float) $data['lat'] : null,
-            isset($data['lng']) ? (float) $data['lng'] : null,
+            $latitude,
+            $longitude,
+            $distanceMeter,
+            $accuracy,
+            $window['schedule']['late_after'] ?? null,
         );
         $this->discardDuplicatePhoto($attendance, $photoPath);
 
@@ -295,12 +349,12 @@ class AttendanceController extends Controller
         $status = AttendanceStatus::where('code', $data['status'])->firstOrFail();
         $methodCode = $data['method'] ?? 'manual';
         $methodId = AttendanceMethod::where('code', $methodCode)->value('id');
-        $yearId = AcademicYear::where('is_active', true)->value('id');
 
         $date = isset($data['attendance_date'])
             ? Carbon::parse($data['attendance_date'])
             : Carbon::now();
         $checkedAt = isset($data['checked_at']) ? Carbon::parse($data['checked_at']) : Carbon::now();
+        $yearId = AcademicYear::forDate($date)?->id ?? AcademicYear::activeId();
 
         $attendance = Attendance::updateOrCreate(
             [
@@ -354,9 +408,12 @@ class AttendanceController extends Controller
         ?string $photoPath = null,
         ?float $latitude = null,
         ?float $longitude = null,
+        ?int $distanceMeter = null,
+        ?float $accuracyMeter = null,
+        ?string $lateAfter = null,
     ): Attendance {
-        $status = $this->resolveStatus($session, $at);
-        $yearId = AcademicYear::where('is_active', true)->value('id');
+        $status = $this->resolveStatus($session, $at, $lateAfter);
+        $yearId = AcademicYear::forDate($at)?->id ?? AcademicYear::activeId();
         $methodId = AttendanceMethod::where('code', 'face_recognition')->value('id');
 
         return Attendance::firstOrCreate(
@@ -375,6 +432,8 @@ class AttendanceController extends Controller
                 'checked_at' => $at,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
+                'distance_meter' => $distanceMeter,
+                'gps_accuracy_meter' => $accuracyMeter,
             ],
         );
     }
@@ -447,72 +506,24 @@ class AttendanceController extends Controller
     /**
      * Status kehadiran sebuah sesi absensi.
      *
-     * Sesi `masuk` yang melewati `boundary_time` dicatat `terlambat`; sesi
-     * lain (termasuk `pulang`) selalu `hadir`.
+     * Sesi `masuk` yang melewati `late_after` (dari jadwal hari itu) dicatat
+     * `terlambat`. Bila jadwal tidak punya `late_after`, fallback ke
+     * `attendance_sessions.boundary_time` seperti perilaku lama.
      */
-    private function resolveStatus(AttendanceSession $session, Carbon $at): AttendanceStatus
-    {
-        if ($session->code === 'masuk' && $session->boundary_time) {
-            $boundary = Carbon::parse($at->toDateString().' '.$session->boundary_time);
+    private function resolveStatus(
+        AttendanceSession $session,
+        Carbon $at,
+        ?string $lateAfter = null,
+    ): AttendanceStatus {
+        $boundaryTime = $lateAfter ?: $session->boundary_time;
+
+        if ($session->code === 'masuk' && $boundaryTime) {
+            $boundary = Carbon::parse($at->toDateString().' '.$boundaryTime);
             $code = $at->greaterThan($boundary) ? 'terlambat' : 'hadir';
 
             return AttendanceStatus::where('code', $code)->firstOrFail();
         }
 
         return AttendanceStatus::where('code', 'hadir')->firstOrFail();
-    }
-
-    /**
-     * Sesi absensi mandiri berdasarkan jam server (bukan pilihan siswa).
-     *
-     *   masuk  : 00:00 s/d `self_cutoff` (07:00)
-     *   pulang : `pulang_from` (15:00) s/d 23:59
-     *
-     * Mengembalikan null saat di luar kedua jendela — pemanggil membalas 422
-     * `attendance_closed`.
-     */
-    private function resolveSession(Carbon $at): ?AttendanceSession
-    {
-        $code = $this->sessionCode($at);
-
-        if ($code === null) {
-            return null;
-        }
-
-        return AttendanceSession::where('code', $code)->first();
-    }
-
-    /**
-     * Kode sesi untuk jam tertentu, atau null bila di luar jendela absensi.
-     */
-    private function sessionCode(Carbon $at): ?string
-    {
-        $selfCutoff = Carbon::parse($at->toDateString().' '.config('presensi.attendance.self_cutoff', '07:00'));
-        $pulangFrom = Carbon::parse($at->toDateString().' '.config('presensi.attendance.pulang_from', '15:00'));
-
-        if ($at->lessThanOrEqualTo($selfCutoff)) {
-            return 'masuk';
-        }
-
-        if ($at->greaterThanOrEqualTo($pulangFrom)) {
-            return 'pulang';
-        }
-
-        return null;
-    }
-
-    /**
-     * Pesan penolakan yang menjelaskan jendela absensi berikutnya.
-     */
-    private function closedMessage(Carbon $at): string
-    {
-        $selfCutoff = config('presensi.attendance.self_cutoff', '07:00');
-        $pulangFrom = config('presensi.attendance.pulang_from', '15:00');
-
-        return sprintf(
-            'Absen mandiri ditutup. Absen masuk sampai %s; absen pulang mulai %s.',
-            $selfCutoff,
-            $pulangFrom,
-        );
     }
 }

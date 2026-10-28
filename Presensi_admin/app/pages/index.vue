@@ -11,7 +11,7 @@
       <base-card
         class="col-span-12"
         title="Statistik Kehadiran"
-        subtitle="Perbandingan kehadiran siswa per hari"
+        subtitle="Tren persentase kehadiran siswa per hari"
       >
         <template #actions>
           <!-- Timeframe Tab (Segmented Control) -->
@@ -34,32 +34,26 @@
           </div>
         </template>
 
-        <!-- Main Chart (Dummy) -->
-        <div class="mt-6 flex h-72 flex-col justify-between gap-6 md:h-80">
-          <div class="relative flex h-full items-end justify-between gap-3 px-2 sm:gap-4">
-            <div
-              v-for="(bar, index) in chartData"
-              :key="index"
-              class="group relative flex flex-1 flex-col items-center justify-end gap-2"
-            >
-              <div class="flex w-full items-end gap-0.5">
-                <!-- Pilar Kehadiran -->
-                <div
-                  class="w-full rounded-sm bg-emerald-900 transition-all duration-300"
-                  :style="{ height: `${bar.hadir}%` }"
-                />
-              </div>
-            </div>
-          </div>
-          <!-- Label Hari -->
-          <div class="flex items-center justify-between gap-3 px-2 sm:gap-4">
-            <span
-              v-for="(bar, index) in chartData"
-              :key="`label-${index}`"
-              class="flex-1 text-center text-xs text-gray-500"
-            >
-              {{ bar.hari }}
-            </span>
+        <!-- Main Chart (dummy): tren kehadiran per hari -->
+        <line-chart
+          class="mt-6"
+          :labels="chartData.map((bar) => bar.hari)"
+          :series="chartSeries"
+          :max-value="100"
+          value-suffix="%"
+          height-class="h-72 md:h-80"
+        />
+
+        <!-- Ringkasan cepat -->
+        <div class="mt-6 grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 pt-4">
+          <div v-for="item in chartSummary" :key="item.label" class="px-3 first:pl-0 last:pr-0">
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              {{ item.label }}
+            </p>
+            <p class="mt-1 text-lg font-semibold tabular-nums tracking-tight text-slate-800">
+              {{ item.value }}
+            </p>
+            <p class="mt-0.5 text-[11px] text-slate-400">{{ item.hint }}</p>
           </div>
         </div>
       </base-card>
@@ -168,6 +162,7 @@
 
 <script setup lang="ts">
 import { ClipboardList, UserCheck, UserX, Users } from '@lucide/vue'
+import type { LineChartSeries } from '#layers/shared/app/components/ui/LineChart.vue'
 
 definePageMeta({
   layout: 'default',
@@ -194,6 +189,33 @@ const chartData = [
   { hari: 'Sabtu', hadir: 78 },
   { hari: 'Minggu', hadir: 65 },
 ]
+
+const chartSeries = computed<LineChartSeries[]>(() => [
+  {
+    label: 'Hadir',
+    color: '#064e3b',
+    area: true,
+    values: chartData.map((bar) => bar.hadir),
+  },
+])
+
+const formatPercent = (value: number) => {
+  const formatted = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(value)
+  return `${formatted}%`
+}
+
+const chartSummary = computed(() => {
+  const values = chartData.map((bar) => bar.hadir)
+  const average = values.reduce((total, value) => total + value, 0) / values.length
+  const highest = chartData.reduce((best, item) => (item.hadir > best.hadir ? item : best))
+  const lowest = chartData.reduce((worst, item) => (item.hadir < worst.hadir ? item : worst))
+
+  return [
+    { label: 'Rata-rata', value: formatPercent(average), hint: 'kehadiran minggu ini' },
+    { label: 'Tertinggi', value: formatPercent(highest.hadir), hint: highest.hari },
+    { label: 'Terendah', value: formatPercent(lowest.hadir), hint: lowest.hari },
+  ]
+})
 
 const perubahanKehadiran = [
   { type: 'up', value: 70 },

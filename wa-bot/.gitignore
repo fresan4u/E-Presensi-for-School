@@ -1,0 +1,6 @@
+# Kredensial sesi WhatsApp (jangan dibagikan — pernah dilindungi root .gitignore
+# untuk .env, tetapi folder auth berisi sesi login yang harus tetap lokal)
+auth/
+
+# Gambar QR login terbaru (berisi tautan login — jangan di-commit)
+qr.png

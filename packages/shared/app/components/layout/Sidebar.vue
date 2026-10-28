@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { Database, LayoutDashboard, LogOut, MapPin, ScanFace, ShieldCheck } from '@lucide/vue'
+import { Database, LayoutDashboard, LogOut, Settings, ShieldCheck, UsersRound } from '@lucide/vue'
 import type { Component } from 'vue'
 
 export interface SidebarItem {
@@ -70,8 +70,12 @@ withDefaults(
     items: () => [
       { label: 'Dashboard', to: '/', icon: LayoutDashboard },
       { label: 'Data Siswa', to: '/siswa', icon: Database },
-      { label: 'Registrasi Wajah', to: '/registrasi-wajah', icon: ScanFace },
-      { label: 'Lokasi Sekolah', to: '/lokasi-sekolah', icon: MapPin },
+      { label: 'Kelola Petugas', to: '/kelola-petugas', icon: UsersRound },
+      { label: 'Pengaturan', to: '/pengaturan', icon: Settings },
+      /*
+       * "Lokasi Sekolah" sudah dipindah ke tab Pengaturan > Lokasi. Halaman
+       * lama di /lokasi-sekolah tetap ada sebagai redirect/kompatibilitas.
+       */
     ],
     subtitle: 'Dashboard Admin',
   },

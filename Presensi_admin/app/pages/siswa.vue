@@ -29,13 +29,23 @@
           @change="onFileChange"
         />
 
-        <base-button variant="outline" :loading="importing" @click="fileInput?.click()">
-          <Upload class="h-4 w-4" />
+        <base-button
+          variant="outline"
+          :loading="importing"
+          class="whitespace-nowrap px-3 py-2 text-xs"
+          @click="fileInput?.click()"
+        >
+          <FileSpreadsheet class="h-4 w-4 shrink-0" />
           Import CSV
         </base-button>
 
-        <base-button variant="solid" data-testid="tambah-siswa" @click="openCreate">
-          <Plus class="h-4 w-4" />
+        <base-button
+          variant="solid"
+          data-testid="tambah-siswa"
+          class="whitespace-nowrap px-3 py-2 text-xs"
+          @click="openCreate"
+        >
+          <UserPlus class="h-4 w-4 shrink-0" />
           Tambah Siswa
         </base-button>
       </div>
@@ -99,15 +109,8 @@
             <td class="px-6 py-4 text-sm text-gray-600">
               {{ siswa.classroom?.name ?? '-' }}
             </td>
-            <td class="px-6 py-4">
-              <span
-                class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                :class="siswa.status?.code === 'aktif'
-                  ? 'bg-emerald-50 text-emerald-800'
-                  : 'bg-slate-100 text-slate-600'"
-              >
-                {{ siswa.status?.label ?? '-' }}
-              </span>
+            <td class="px-6 py-4 text-sm text-gray-600">
+              {{ siswa.academic_year?.label ?? '-' }}
             </td>
             <td class="px-6 py-4">
               <span
@@ -181,29 +184,24 @@
     >
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium text-slate-800">Nama Lengkap</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <UserRound class="h-4 w-4 text-emerald-700" />
+            Nama Lengkap
+          </span>
           <input v-model="form.full_name" type="text" class="input" placeholder="Nama siswa" />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium text-slate-800">NIS</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <Hash class="h-4 w-4 text-emerald-700" />
+            NIS
+          </span>
           <input v-model="form.nis" type="text" class="input" placeholder="Nomor induk siswa" />
         </label>
         <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-slate-800">PIN Aplikasi Siswa</span>
-          <input
-            v-model="form.pin"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            class="input font-mono"
-            placeholder="Kosongkan untuk memakai NIS"
-          />
-          <span class="text-xs text-slate-400">
-            Dipakai siswa untuk login aplikasi mobile (minimal 4 karakter). Boleh dilihat & diubah kapan saja.
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <School class="h-4 w-4 text-emerald-700" />
+            Kelas
           </span>
-        </label>
-        <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-slate-800">Kelas</span>
           <select v-model="form.classroom_id" class="input">
             <option :value="null">Belum ditentukan</option>
             <option v-for="room in classrooms" :key="room.id" :value="room.id">
@@ -212,16 +210,25 @@
           </select>
         </label>
         <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-slate-800">Status</span>
-          <select v-model="form.status" class="input">
-            <option value="aktif">Aktif</option>
-            <option value="non_aktif">Non Aktif</option>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <CalendarRange class="h-4 w-4 text-emerald-700" />
+            Tahun Ajaran
+          </span>
+          <select v-model="form.academic_year_id" class="input" :disabled="loadingAcademicYears">
+            <option :value="null">Belum ditentukan</option>
+            <option v-for="year in academicYears" :key="year.id" :value="year.id">
+              {{ year.label }}{{ year.is_active ? ' (Aktif)' : '' }}
+            </option>
           </select>
+          <span v-if="loadingAcademicYears" class="text-xs text-slate-400">Memuat tahun ajaran...</span>
         </label>
 
         <!-- Nomor wali murid: dipakai WaNotifier untuk kirim notifikasi absensi -->
         <label class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium text-slate-800">Nama Wali</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <UsersRound class="h-4 w-4 text-emerald-700" />
+            Nama Wali
+          </span>
           <input
             v-model="form.guardian_name"
             type="text"
@@ -230,7 +237,10 @@
           />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium text-slate-800">Hubungan</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <HeartHandshake class="h-4 w-4 text-emerald-700" />
+            Hubungan
+          </span>
           <select v-model="form.guardian_relationship" class="input">
             <option value="ayah">Ayah</option>
             <option value="ibu">Ibu</option>
@@ -238,7 +248,10 @@
           </select>
         </label>
         <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-slate-800">Nomor WhatsApp Wali</span>
+          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <Phone class="h-4 w-4 text-emerald-700" />
+            Nomor WhatsApp Wali
+          </span>
           <input
             v-model="form.guardian_phone"
             type="tel"
@@ -279,8 +292,25 @@
 </template>
 
 <script setup lang="ts">
-import { CheckCircle2, KeyRound, Loader2, Plus, ScanFace, Search, Trash2, TriangleAlert, Upload } from '@lucide/vue'
-import type { ApiClassroom, ApiStudent } from '#layers/shared/app/composables/useApi'
+import {
+  CheckCircle2,
+  CalendarRange,
+  FileSpreadsheet,
+  Hash,
+  HeartHandshake,
+  KeyRound,
+  Loader2,
+  Phone,
+  School,
+  ScanFace,
+  Search,
+  Trash2,
+  TriangleAlert,
+  UserPlus,
+  UserRound,
+  UsersRound,
+} from '@lucide/vue'
+import type { ApiAcademicYear, ApiClassroom, ApiStudent } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: 'default',
@@ -299,9 +329,11 @@ const totalData = ref(0)
 const totalPages = ref(1)
 
 const classrooms = ref<ApiClassroom[]>([])
+const academicYears = ref<ApiAcademicYear[]>([])
+const loadingAcademicYears = ref(false)
 const notice = ref<{ type: 'success' | 'error'; text: string } | null>(null)
 
-const tableHeaders = ['Nama Lengkap', 'NIS', 'PIN', 'Kelas', 'Status', 'Wajah']
+const tableHeaders = ['Nama Lengkap', 'NIS', 'PIN', 'Kelas', 'Tahun Ajaran', 'Wajah']
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -336,6 +368,18 @@ const loadClassrooms = async () => {
     classrooms.value = res.data
   } catch {
     // Daftar kelas opsional untuk form; abaikan bila gagal.
+  }
+}
+
+const loadAcademicYears = async () => {
+  loadingAcademicYears.value = true
+  try {
+    const res = await api.academicYears()
+    academicYears.value = res.data
+  } catch (error) {
+    showNotice('error', apiErrorMessage(error))
+  } finally {
+    loadingAcademicYears.value = false
   }
 }
 
@@ -381,9 +425,8 @@ const savingStudent = ref(false)
 const form = reactive({
   nis: '',
   full_name: '',
-  pin: '',
   classroom_id: null as number | null,
-  status: 'aktif',
+  academic_year_id: null as number | null,
   guardian_name: '',
   guardian_relationship: 'ayah',
   guardian_phone: '',
@@ -393,9 +436,8 @@ const openCreate = () => {
   Object.assign(form, {
     nis: '',
     full_name: '',
-    pin: '',
     classroom_id: null,
-    status: 'aktif',
+    academic_year_id: academicYears.value.find((year) => year.is_active)?.id ?? null,
     guardian_name: '',
     guardian_relationship: 'ayah',
     guardian_phone: '',
@@ -407,15 +449,12 @@ const submitStudent = async () => {
   savingStudent.value = true
   try {
     const phone = form.guardian_phone.trim()
-    const pin = form.pin.trim()
 
     await api.createStudent({
       nis: form.nis.trim(),
       full_name: form.full_name.trim(),
       classroom_id: form.classroom_id,
-      status: form.status,
-      // PIN opsional; tanpa PIN, backend memakai NIS sebagai PIN awal.
-      ...(pin ? { pin } : {}),
+      academic_year_id: form.academic_year_id,
       // Wali hanya dikirim bila nomornya diisi.
       ...(phone
         ? {
@@ -488,7 +527,7 @@ const removeStudent = async (student: ApiStudent) => {
 }
 
 onMounted(async () => {
-  await Promise.all([loadStudents(), loadClassrooms()])
+  await Promise.all([loadStudents(), loadClassrooms(), loadAcademicYears()])
 })
 
 onUnmounted(() => {

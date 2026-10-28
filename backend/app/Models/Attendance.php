@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'student_id', 'academic_year_id', 'attendance_date', 'session_id',
     'status_id', 'method_id', 'matched_descriptor_id', 'match_distance',
     'checked_at', 'note', 'photo_path', 'created_by',
-    'latitude', 'longitude',
+    'latitude', 'longitude', 'distance_meter', 'gps_accuracy_meter',
 ])]
 #[ObservedBy(AttendanceObserver::class)]
 class Attendance extends Model
@@ -24,6 +24,8 @@ class Attendance extends Model
             'attendance_date' => 'date',
             'checked_at' => 'datetime',
             'match_distance' => 'float',
+            'distance_meter' => 'integer',
+            'gps_accuracy_meter' => 'float',
         ];
     }
 

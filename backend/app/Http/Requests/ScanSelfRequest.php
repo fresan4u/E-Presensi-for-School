@@ -35,8 +35,9 @@ class ScanSelfRequest extends FormRequest
                 'regex:/^data:image\/(jpeg|jpg);base64,[A-Za-z0-9+\/=]+$/',
             ],
             // Koordinat GPS siswa saat absen (buat geofencing/history).
-            'lat' => ['nullable', 'numeric'],
-            'lng' => ['nullable', 'numeric'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
+            'accuracy' => ['nullable', 'numeric', 'between:0,100000'],
         ];
     }
 }

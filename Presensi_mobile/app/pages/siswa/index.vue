@@ -12,35 +12,59 @@ const absenMasuk = ref<ApiAttendance | null>(null)
 const absenPulang = ref<ApiAttendance | null>(null)
 /** Absensi terbaru (maks. 5). */
 const riwayatTerbaru = ref<ApiAttendance[]>([])
-/** Batas jam absen mandiri dari server. */
-const jendela = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
+/** Batas jam absen mandiri dari server, termasuk jadwal per hari & libur. */
+const jendela = ref<ApiAttendanceWindow | null>(null)
 /** Jam sekarang (untuk menentukan sesi & tombol tutup). */
 const sekarang = ref(new Date())
 
 const avatarInisial = computed(() => inisial(student.value?.full_name ?? ''))
 const tanggalHariIni = computed(() => tanggalPanjang(sekarang.value))
 
-/** Menit sejak tengah malam dari string "HH:MM". */
-function keMenit(jam: string): number {
+/** Menit sejak tengah malam dari string "HH:MM" (null bila tidak valid). */
+function keMenit(jam: string | null | undefined): number | null {
+  if (!jam) return null
   const [h, m] = jam.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
   return (h ?? 0) * 60 + (m || 0)
 }
 
-/** Sesi yang sedang berlaku menurut jam server (fallback: masuk). */
+/** Sesi yang sedang berlaku menurut jam (fallback: masuk). */
 const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
   if (!jendela.value) return 'masuk'
   const menitSekarang = sekarang.value.getHours() * 60 + sekarang.value.getMinutes()
-  return menitSekarang >= keMenit(jendela.value.pulang_from) ? 'pulang' : 'masuk'
+  const pulangFrom = keMenit(jendela.value.pulang_from) ?? 15 * 60
+  return menitSekarang >= pulangFrom ? 'pulang' : 'masuk'
 })
 
-/** Absen mandiri sedang dibuka? (jendela masuk atau jendela pulang). */
+/** Absen mandiri sedang dibuka? (hari sekolah, bukan libur, di dalam jendela). */
 const absenDibuka = computed(() => {
-  if (!jendela.value) return true
+  const w = jendela.value
+  if (!w) return true
+  if (!w.self_scan_enabled || w.is_holiday || !w.is_school_day) return false
+
   const menitSekarang = sekarang.value.getHours() * 60 + sekarang.value.getMinutes()
-  return (
-    menitSekarang <= keMenit(jendela.value.self_cutoff) ||
-    menitSekarang >= keMenit(jendela.value.pulang_from)
-  )
+  const dalamJendela = (
+    mulai: string | null,
+    selesai: string | null,
+    fallbackSelesai: string | null,
+  ) => {
+    const from = keMenit(mulai)
+    const to = keMenit(selesai ?? fallbackSelesai)
+    return from !== null && to !== null && menitSekarang >= from && menitSekarang <= to
+  }
+
+  return dalamJendela(w.masuk_start ?? '00:00', w.masuk_end, w.self_cutoff)
+    || dalamJendela(w.pulang_from, w.pulang_end, '23:59')
+})
+
+/** Pesan singkat mengapa absen ditutup (dari server, fallback lokal). */
+const alasanTutup = computed(() => {
+  const w = jendela.value
+  if (!w) return 'Di luar jam absen mandiri.'
+  if (w.is_holiday) return `Hari ini libur${w.holiday_name ? `: ${w.holiday_name}` : ''}.`
+  if (!w.self_scan_enabled) return 'Absensi mandiri sedang dinonaktifkan admin.'
+  if (!w.is_school_day) return 'Tidak ada jadwal absensi untuk hari ini.'
+  return `Absen masuk sampai ${w.masuk_end ?? w.self_cutoff}; absen pulang mulai ${w.pulang_from}.`
 })
 
 /** Status absen relevan untuk kartu (sesuai jam saat ini). */
@@ -245,7 +269,7 @@ onBeforeUnmount(() => {
           <span class="block text-base font-bold text-slate-500">Absen Ditutup</span>
           <span class="mt-0.5 block text-xs text-slate-400">
             <template v-if="jendela">
-              Absen masuk sampai {{ jendela.self_cutoff }}; absen pulang mulai {{ jendela.pulang_from }}.
+              {{ alasanTutup }}
             </template>
             <template v-else>Di luar jam absen mandiri.</template>
           </span>

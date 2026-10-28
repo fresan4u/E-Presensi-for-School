@@ -26,8 +26,10 @@ Butuh backend Laravel di `http://127.0.0.1:8000` (diproxy lewat `routeRules`
 1. **Login** (`/siswa/login`) — NIS + PIN. PIN awal = NIS.
 2. **Ganti PIN** (`/siswa/ganti-pin`) — otomatis dipaksa selama `must_change_pin`.
 3. **Beranda** (`/siswa`) — status absen hari ini + absensi terbaru.
-4. **Scan Wajah** (`/siswa/scan`) — pilih sesi (masuk/pulang), kamera mendeteksi
-   wajah lalu descriptor dikirim ke `POST /student/attendance/scan`.
+4. **Scan Wajah** (`/siswa/scan`) — sesi ditentukan server dari jadwal hari itu;
+   kamera mendeteksi wajah lalu descriptor, foto, koordinat, dan akurasi GPS
+   dikirim ke `POST /student/attendance/scan`. Server menolak bila libur,
+   hari nonaktif, di luar jendela, atau di luar area (geofence aktif).
 5. **Berhasil/Gagal** (`/siswa/berhasil`, `/siswa/gagal`).
 6. **Registrasi Wajah** (`/siswa/registrasi-wajah`) — daftarkan 3 sampel wajah,
    dibuka dari kartu di halaman Profil. Kartu itu otomatis hilang setelah semua

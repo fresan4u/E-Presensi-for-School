@@ -14,6 +14,8 @@ class AttendanceResource extends JsonResource
             'attendance_date' => $this->attendance_date?->format('Y-m-d'),
             'checked_at' => $this->checked_at,
             'match_distance' => $this->match_distance,
+            'distance_meter' => $this->distance_meter,
+            'gps_accuracy_meter' => $this->gps_accuracy_meter,
             'note' => $this->note,
             'status' => $this->whenLoaded('status', fn () => [
                 'code' => $this->status->code,

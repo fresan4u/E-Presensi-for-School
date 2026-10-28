@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class SchoolSetting extends Model
 {
-    protected $fillable = ['latitude', 'longitude', 'radius_meter'];
+    protected $fillable = ['latitude', 'longitude', 'radius_meter', 'geofence_enabled'];
 
     protected function casts(): array
     {
@@ -21,6 +21,7 @@ class SchoolSetting extends Model
             'latitude' => 'float',
             'longitude' => 'float',
             'radius_meter' => 'integer',
+            'geofence_enabled' => 'boolean',
         ];
     }
 
@@ -35,6 +36,7 @@ class SchoolSetting extends Model
         $setting->latitude ??= (float) $config['latitude'];
         $setting->longitude ??= (float) $config['longitude'];
         $setting->radius_meter ??= (int) $config['radius_meter'];
+        $setting->geofence_enabled ??= false;
 
         return $setting;
     }

@@ -267,7 +267,7 @@ const session = ref<'masuk' | 'pulang'>('masuk')
 /** Override manual: petugas memaksa sesi sendiri (kasus pulang cepat/sakit). */
 const manualSession = ref(false)
 /** Jendela absen dari server. */
-const attendanceWindow = ref<{ pulang_from: string } | null>(null)
+const attendanceWindow = ref<ApiAttendanceWindow | null>(null)
 
 /** Konfirmasi sebelum keluar dari mode kiosk. */
 const { leaveModalOpen, requestLeave, confirmLeave, cancelLeave } = useLeaveGuard()

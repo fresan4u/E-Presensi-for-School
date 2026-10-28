@@ -8,11 +8,14 @@ use App\Http\Resources\FaceDescriptorResource;
 use App\Models\Student;
 use App\Models\StudentFaceDescriptor;
 use App\Models\User;
+use App\Services\SettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class FaceDescriptorController extends Controller
 {
+    public function __construct(private SettingsService $settings) {}
+
     public function index(Student $student)
     {
         return FaceDescriptorResource::collection(
@@ -75,7 +78,7 @@ class FaceDescriptorController extends Controller
     private function storeFor(StoreFaceDescriptorRequest $request, Student $student): JsonResponse
     {
         $data = $request->validated();
-        $maxSamples = (int) config('face.samples_per_student', 3);
+        $maxSamples = $this->settings->faceSamples();
         $descriptor = array_map('floatval', $data['descriptor']);
 
         // Tentukan nomor sampel: pakai yang dikirim, atau slot kosong berikutnya.

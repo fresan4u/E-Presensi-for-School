@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\BulkStudentActionRequest;
 use App\Http\Requests\ImportStudentsRequest;
 use App\Http\Requests\StoreStudentRequest;
 use App\Http\Requests\UpdateStudentRequest;
@@ -12,9 +13,11 @@ use App\Models\Classroom;
 use App\Models\Student;
 use App\Models\StudentClassEnrollment;
 use App\Models\StudentStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 class StudentController extends Controller
 {
@@ -23,6 +26,7 @@ class StudentController extends Controller
     {
         return [
             'status',
+            'enrollments.academicYear',
             'enrollments.classroom.gradeLevel',
             'enrollments.classroom.major',
             'guardians',
@@ -35,6 +39,8 @@ class StudentController extends Controller
             ->with($this->relations())
             ->withCount('faceDescriptors');
 
+        $yearId = $this->selectedYearId($request);
+
         if ($search = trim((string) $request->query('search', ''))) {
             $query->where(function ($q) use ($search) {
                 $q->where('full_name', 'like', "%{$search}%")
@@ -42,19 +48,33 @@ class StudentController extends Controller
             });
         }
 
+        if ($request->boolean('unassigned')) {
+            $query->doesntHave('enrollments');
+        } elseif ($yearId) {
+            $query->whereHas('enrollments', fn ($q) => $q->where('academic_year_id', $yearId));
+        }
+
         if ($classroomId = (int) $request->query('classroom_id', 0)) {
-            $query->whereHas('enrollments', fn ($q) => $q->where('is_active', true)->where('classroom_id', $classroomId));
+            $query->whereHas('enrollments', function ($q) use ($classroomId, $yearId) {
+                $q->where('is_active', true)->where('classroom_id', $classroomId);
+
+                if ($yearId) {
+                    $q->where('academic_year_id', $yearId);
+                }
+            });
         }
 
         if ($statusCode = trim((string) $request->query('status', ''))) {
             $query->whereHas('status', fn ($q) => $q->where('code', $statusCode));
         }
 
+        $this->applySort($query, $request, $yearId);
+
         $perPage = (int) $request->query('per_page', 10) ?: 10;
         $perPage = max(1, min($perPage, 100));
 
         return StudentResource::collection(
-            $query->orderBy('full_name')->paginate($perPage)->withQueryString(),
+            $query->paginate($perPage)->withQueryString(),
         );
     }
 
@@ -105,7 +125,9 @@ class StudentController extends Controller
 
         $student->update($studentFields);
 
-        if (! empty($data['classroom_id'])) {
+        // Hanya sentuh enrollment tahun yang dipilih. Ini mencegah edit roster
+        // tahun lama menimpa kelas siswa pada tahun ajaran yang sedang aktif.
+        if (array_key_exists('classroom_id', $data)) {
             $this->syncEnrollment($student, $data['classroom_id'], $data['academic_year_id'] ?? null);
         }
 
@@ -123,13 +145,74 @@ class StudentController extends Controller
         return response()->json(['message' => 'Siswa berhasil dihapus.']);
     }
 
+    /**
+     * Aksi massal per tahun ajaran. Dipakai panel admin untuk menonaktifkan,
+     * mengaktifkan kembali, atau menghapus siswa pada satu angkatan/tahun.
+     */
+    public function bulkAction(BulkStudentActionRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+        $yearId = (int) $data['academic_year_id'];
+        $action = $data['action'];
+        $all = $request->boolean('all');
+
+        $query = Student::query()
+            ->whereHas('enrollments', fn ($q) => $q->where('academic_year_id', $yearId));
+
+        if (! $all) {
+            $query->whereIn('id', $data['ids'] ?? []);
+        }
+
+        $students = $query->get(['id']);
+
+        if ($students->isEmpty()) {
+            return response()->json(['message' => 'Tidak ada siswa yang cocok pada tahun ajaran tersebut.'], 422);
+        }
+
+        if (! $all && count($data['ids'] ?? []) !== $students->count()) {
+            return response()->json([
+                'message' => 'Sebagian siswa tidak terdaftar pada tahun ajaran yang dipilih.',
+            ], 422);
+        }
+
+        $ids = $students->pluck('id');
+
+        if ($action === 'delete') {
+            DB::transaction(fn () => Student::query()->whereIn('id', $ids)->delete());
+        } else {
+            $statusId = StudentStatus::query()
+                ->where('code', $action === 'activate' ? 'aktif' : 'non_aktif')
+                ->value('id');
+
+            DB::transaction(function () use ($ids, $yearId, $statusId, $action): void {
+                Student::query()->whereIn('id', $ids)->update(['status_id' => $statusId]);
+
+                StudentClassEnrollment::query()
+                    ->whereIn('student_id', $ids)
+                    ->where('academic_year_id', $yearId)
+                    ->update(['is_active' => $action === 'activate']);
+            });
+        }
+
+        $labels = [
+            'activate' => 'diaktifkan',
+            'deactivate' => 'dinonaktifkan',
+            'delete' => 'dihapus',
+        ];
+
+        return response()->json([
+            'message' => "{$students->count()} siswa berhasil {$labels[$action]}.",
+            'data' => ['count' => $students->count(), 'action' => $action],
+        ]);
+    }
+
     public function import(ImportStudentsRequest $request): JsonResponse
     {
         $handle = fopen($request->file('file')->getRealPath(), 'r');
         $header = array_map(fn ($h) => strtolower(trim((string) $h)), fgetcsv($handle) ?: []);
 
         $statusAktifId = StudentStatus::where('code', 'aktif')->value('id');
-        $activeYearId = AcademicYear::where('is_active', true)->value('id');
+        $yearId = (int) ($request->input('academic_year_id') ?: AcademicYear::activeId());
 
         $classroomMap = [];
         foreach (Classroom::with(['gradeLevel', 'major'])->get() as $classroom) {
@@ -170,9 +253,9 @@ class StudentController extends Controller
             $key = $this->classroomKey($record['grade_level'] ?? null, $record['major'] ?? null, $record['rombel'] ?? null);
             $classroomId = $classroomMap[$key] ?? null;
 
-            if ($classroomId && $activeYearId) {
+            if ($classroomId && $yearId) {
                 StudentClassEnrollment::updateOrCreate(
-                    ['student_id' => $student->id, 'academic_year_id' => $activeYearId],
+                    ['student_id' => $student->id, 'academic_year_id' => $yearId],
                     ['classroom_id' => $classroomId, 'is_active' => true],
                 );
             }
@@ -189,12 +272,18 @@ class StudentController extends Controller
 
     private function syncEnrollment(Student $student, ?int $classroomId, ?int $academicYearId): void
     {
-        if (! $classroomId) {
+        $yearId = $academicYearId ?? AcademicYear::activeId();
+
+        if (! $yearId) {
             return;
         }
 
-        $yearId = $academicYearId ?? AcademicYear::where('is_active', true)->value('id');
-        if (! $yearId) {
+        if (! $classroomId) {
+            StudentClassEnrollment::query()
+                ->where('student_id', $student->id)
+                ->where('academic_year_id', $yearId)
+                ->update(['is_active' => false]);
+
             return;
         }
 
@@ -235,6 +324,50 @@ class StudentController extends Controller
     private function classroomKey($gradeLevel, $major, $rombel): string
     {
         return strtoupper(trim((string) $gradeLevel)).'|'.strtoupper(trim((string) $major)).'|'.(int) $rombel;
+    }
+
+    /** Tahun ajaran yang dipilih pada query string (`all`/kosong = semua). */
+    private function selectedYearId(Request $request): ?int
+    {
+        $value = $request->query('academic_year_id');
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function applySort(Builder $query, Request $request, ?int $yearId): void
+    {
+        $sort = (string) $request->query('sort', 'name');
+        $direction = strtolower((string) $request->query('direction', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+        if ($sort === 'nis') {
+            $query->orderBy('nis', $direction);
+
+            return;
+        }
+
+        if ($sort === 'classroom') {
+            $query
+                ->orderBy($this->enrollmentOrderSubquery($yearId, 'grade_levels.level'), $direction)
+                ->orderBy($this->enrollmentOrderSubquery($yearId, 'majors.code'), $direction)
+                ->orderBy($this->enrollmentOrderSubquery($yearId, 'classrooms.rombel'), $direction)
+                ->orderBy('full_name');
+
+            return;
+        }
+
+        $query->orderBy('full_name', $direction);
+    }
+
+    private function enrollmentOrderSubquery(?int $yearId, string $column): Builder
+    {
+        return StudentClassEnrollment::query()
+            ->join('classrooms', 'classrooms.id', '=', 'student_class_enrollments.classroom_id')
+            ->join('grade_levels', 'grade_levels.id', '=', 'classrooms.grade_level_id')
+            ->leftJoin('majors', 'majors.id', '=', 'classrooms.major_id')
+            ->whereColumn('student_class_enrollments.student_id', 'students.id')
+            ->when($yearId, fn (Builder $query) => $query->where('student_class_enrollments.academic_year_id', $yearId))
+            ->select($column)
+            ->limit(1);
     }
 
     /**

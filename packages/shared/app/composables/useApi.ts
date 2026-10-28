@@ -54,6 +54,9 @@ export interface ApiStudent {
   /** Hanya dikirim ke panel admin/petugas; tidak pernah untuk siswa. */
   pin?: string
   status: ApiLookup | null
+  /** Tahun ajaran untuk kelas yang sedang ditampilkan. */
+  academic_year?: Pick<ApiAcademicYear, 'id' | 'label'> | null
+  enrollment_active?: boolean | null
   classroom: ApiClassroom | null
   guardians?: ApiStudentGuardian[]
   face_descriptors_count: number | null
@@ -94,11 +97,41 @@ export interface ApiAttendance {
   attendance_date: string
   checked_at: string
   match_distance: number | null
+  /** Jarak HP ke titik sekolah saat scan (meter); null bila tanpa GPS. */
+  distance_meter: number | null
+  gps_accuracy_meter: number | null
   note: string | null
   status: { code: AttendanceStatus; label: string }
   method: { code: string; label: string }
   session: { code: string; label: string }
   student: ApiStudent | null
+}
+
+/**
+ * Ringkasan jendela absensi mandiri untuk satu hari. Key lama
+ * (`self_cutoff`, `handover_at`, `pulang_from`) tetap dikirim server supaya
+ * klien yang sudah terdeploy tidak rusak; key baru dipakai untuk jadwal
+ * per hari, hari libur, dan status buka/tutup.
+ */
+export interface ApiAttendanceWindow {
+  date: string
+  day_of_week: number
+  day_name: string
+  self_cutoff: string | null
+  handover_at: string | null
+  pulang_from: string | null
+  masuk_start: string | null
+  masuk_end: string | null
+  pulang_end: string | null
+  late_after: string | null
+  self_scan_enabled: boolean
+  is_school_day: boolean
+  is_holiday: boolean
+  holiday_name: string | null
+  is_open: boolean
+  current_session: 'masuk' | 'pulang' | null
+  reason: 'holiday' | 'not_school_day' | 'disabled' | 'outside_window' | null
+  message: string | null
 }
 
 export interface ScanResult {
@@ -118,11 +151,7 @@ export interface ApiMeta {
   attendance_statuses: ApiLookup[]
   attendance_methods: ApiLookup[]
   attendance_sessions: Array<ApiLookup & { boundary_time: string | null }>
-  attendance_window: {
-    self_cutoff: string
-    handover_at: string
-    pulang_from: string
-  }
+  attendance_window: ApiAttendanceWindow
   face: ApiFaceMeta
 }
 
@@ -158,8 +187,19 @@ export interface StudentQuery {
   search?: string
   classroom_id?: number | null
   status?: string
+  academic_year_id?: number | null
+  unassigned?: boolean
+  sort?: 'name' | 'nis' | 'classroom'
+  direction?: 'asc' | 'desc'
   page?: number
   per_page?: number
+}
+
+export interface StudentBulkPayload {
+  academic_year_id: number
+  action: 'activate' | 'deactivate' | 'delete'
+  ids?: number[]
+  all?: boolean
 }
 
 /** Titik pusat & radius area absensi sekolah (geofencing app siswa). */
@@ -167,6 +207,9 @@ export interface ApiSchoolLocation {
   latitude: number
   longitude: number
   radius_meter: number
+  geofence_enabled: boolean
+  /** `false` = masih memakai fallback config, admin belum pernah menyimpan. */
+  configured: boolean
   updated_at: string | null
 }
 
@@ -174,6 +217,91 @@ export interface SchoolLocationPayload {
   latitude: number
   longitude: number
   radius_meter: number
+  geofence_enabled?: boolean
+}
+
+/* ---------- Pengaturan admin ---------- */
+
+export interface ApiAppSettings {
+  attendance: {
+    self_scan_enabled: boolean
+  }
+  face: {
+    match_threshold: number
+    samples_per_student: number
+  }
+  notification: {
+    wa_enabled: boolean
+  }
+  location: ApiSchoolLocation
+}
+
+export interface AppSettingsPayload {
+  attendance?: {
+    self_scan_enabled?: boolean
+  }
+  face?: {
+    match_threshold?: number
+    samples_per_student?: number
+  }
+  notification?: {
+    wa_enabled?: boolean
+  }
+}
+
+export interface ApiSettingsResponse {
+  data: ApiAppSettings
+  /** Ringkasan jendela absensi hari ini (server time). */
+  status: ApiAttendanceWindow & { server_time: string }
+}
+
+export interface ApiAttendanceSchedule {
+  day_of_week: number
+  day_name: string
+  is_active: boolean
+  masuk_start: string
+  masuk_end: string
+  handover_at: string | null
+  pulang_start: string
+  pulang_end: string
+  late_after: string | null
+}
+
+export interface AttendanceSchedulePayload {
+  day_of_week: number
+  is_active: boolean
+  masuk_start: string
+  masuk_end: string
+  handover_at: string | null
+  pulang_start: string
+  pulang_end: string
+  late_after: string | null
+}
+
+export interface ApiSchoolHoliday {
+  id: number
+  date: string
+  name: string
+  description: string | null
+}
+
+export interface SchoolHolidayPayload {
+  date: string
+  name: string
+  description?: string | null
+}
+
+export interface ApiSettingsAuditLog {
+  id: number
+  user_id: number | null
+  action: 'create' | 'update' | 'delete'
+  subject_type: string
+  subject_id: number | null
+  changes: Record<string, unknown> | null
+  ip_address: string | null
+  user_agent: string | null
+  created_at: string
+  user?: Pick<ApiUser, 'id' | 'name' | 'email'>
 }
 
 export interface ApiRole {
@@ -209,7 +337,16 @@ export interface OfficerQuery {
 export interface ApiAcademicYear {
   id: number
   label: string
+  start_date: string
+  end_date: string
   is_active: boolean
+}
+
+export interface AcademicYearPayload {
+  label: string
+  start_date: string
+  end_date: string
+  is_active?: boolean
 }
 
 export interface ApiGuardian {
@@ -220,6 +357,8 @@ export interface ApiGuardian {
 
 export interface ApiRecapStudent {
   id: number
+  /** ID baris absensi hari itu; null bila siswa belum punya absensi (alpa). */
+  attendance_id: number | null
   nis: string
   full_name: string
   status: { code: AttendanceStatus; label: string }
@@ -330,6 +469,16 @@ export const useApi = () => {
     meta: () => client<Item<ApiMeta>>('/meta'),
     classrooms: () => client<Collection<ApiClassroom>>('/classrooms'),
     academicYears: () => client<Collection<ApiAcademicYear>>('/academic-years'),
+    createAcademicYear: (body: AcademicYearPayload) =>
+      client<Item<ApiAcademicYear>>('/academic-years', { method: 'POST', body }),
+    updateAcademicYear: (id: number, body: AcademicYearPayload) =>
+      client<Item<ApiAcademicYear>>(`/academic-years/${id}`, { method: 'PUT', body }),
+    activateAcademicYear: (id: number) =>
+      client<Item<ApiAcademicYear> & { message: string }>(`/academic-years/${id}/activate`, {
+        method: 'PATCH',
+      }),
+    deleteAcademicYear: (id: number) =>
+      client<{ message: string }>(`/academic-years/${id}`, { method: 'DELETE' }),
 
     /* Siswa */
     students: (query: StudentQuery = {}) =>
@@ -341,9 +490,15 @@ export const useApi = () => {
       client<Item<ApiStudent>>(`/students/${id}`, { method: 'PUT', body }),
     deleteStudent: (id: number) =>
       client<{ message: string }>(`/students/${id}`, { method: 'DELETE' }),
-    importStudents: (file: File) => {
+    bulkStudentAction: (body: StudentBulkPayload) =>
+      client<Item<{ count: number; action: string }> & { message: string }>(
+        '/students/bulk-action',
+        { method: 'POST', body },
+      ),
+    importStudents: (file: File, academicYearId?: number | null) => {
       const form = new FormData()
       form.append('file', file)
+      if (academicYearId) form.append('academic_year_id', String(academicYearId))
       return client<Item<{ created: number; updated: number; errors: string[] }>>(
         '/students/import',
         { method: 'POST', body: form },
@@ -357,6 +512,32 @@ export const useApi = () => {
         method: 'PUT',
         body,
       }),
+
+    /* Pengaturan operasional (khusus admin) */
+    settings: () => client<ApiSettingsResponse>('/settings'),
+    updateSettings: (body: AppSettingsPayload) =>
+      client<ApiSettingsResponse>('/settings', { method: 'PUT', body }),
+    settingsAudit: (query: { page?: number; per_page?: number } = {}) =>
+      client<Paginated<ApiSettingsAuditLog>>('/settings/audit', { query }),
+
+    /* Jadwal absensi per hari (Senin–Minggu) */
+    attendanceSchedules: () =>
+      client<Collection<ApiAttendanceSchedule>>('/attendance-schedules'),
+    updateAttendanceSchedules: (schedules: AttendanceSchedulePayload[]) =>
+      client<Collection<ApiAttendanceSchedule>>('/attendance-schedules', {
+        method: 'PUT',
+        body: { schedules },
+      }),
+
+    /* Kalender hari libur */
+    schoolHolidays: (year: number) =>
+      client<Collection<ApiSchoolHoliday>>('/school-holidays', { query: { year } }),
+    createSchoolHoliday: (body: SchoolHolidayPayload) =>
+      client<Item<ApiSchoolHoliday>>('/school-holidays', { method: 'POST', body }),
+    updateSchoolHoliday: (id: number, body: SchoolHolidayPayload) =>
+      client<Item<ApiSchoolHoliday>>(`/school-holidays/${id}`, { method: 'PUT', body }),
+    deleteSchoolHoliday: (id: number) =>
+      client<{ message: string }>(`/school-holidays/${id}`, { method: 'DELETE' }),
 
     /* Petugas (akun admin panel) */
     officers: (query: OfficerQuery = {}) =>
@@ -410,7 +591,13 @@ export const useApi = () => {
     studentLogout: () => client<{ message: string }>('/student/logout', { method: 'POST' }),
     studentAttendances: (query: Record<string, unknown> = {}) =>
       client<Paginated<ApiAttendance>>('/student/attendances', { query }),
-    studentScan: (descriptor: number[], photo?: string, lat?: number | null, lng?: number | null) =>
+    studentScan: (
+      descriptor: number[],
+      photo?: string,
+      lat?: number | null,
+      lng?: number | null,
+      accuracy?: number | null,
+    ) =>
       client<ScanResult>('/student/attendance/scan', {
         method: 'POST',
         body: {
@@ -418,6 +605,7 @@ export const useApi = () => {
           ...(photo ? { photo } : {}),
           ...(lat !== null && lat !== undefined ? { lat } : {}),
           ...(lng !== null && lng !== undefined ? { lng } : {}),
+          ...(accuracy !== null && accuracy !== undefined ? { accuracy } : {}),
         },
       }),
     /* Referensi untuk portal siswa (jendela absen, status, sesi). */

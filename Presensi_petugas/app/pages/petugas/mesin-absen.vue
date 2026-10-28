@@ -27,6 +27,27 @@
       </div>
     </header>
 
+    <!-- Pop notifikasi di paling atas layar (selalu terlihat, tidak menggeser layout) -->
+    <transition name="notice-pop">
+      <div
+        v-if="scanError"
+        class="notice-pop fixed left-1/2 top-4 z-50 flex w-[min(28rem,calc(100vw-2rem))] items-start gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 shadow-lg shadow-slate-900/15"
+        role="status"
+        aria-live="polite"
+      >
+        <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <p class="flex-1 text-sm text-slate-700">{{ scanError }}</p>
+        <button
+          type="button"
+          class="shrink-0 rounded-md p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Tutup notifikasi"
+          @click="dismissNotice"
+        >
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+    </transition>
+
     <!-- ===================== KONTEN UTAMA ===================== -->
     <section class="grid flex-1 gap-6 p-6 lg:grid-cols-3">
       <!-- Kolom kiri: kamera pemindai + hasil -->
@@ -122,9 +143,9 @@
             </div>
           </template>
 
-          <!-- Mode fingerprint -->
+          <!-- Mode fingerprint (disembunyikan sementara, lihat `tampilkanFingerprint`) -->
           <div
-            v-else
+            v-else-if="tampilkanFingerprint"
             class="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center text-white"
           >
             <Fingerprint class="h-24 w-24 animate-pulse text-emerald-400" />
@@ -153,9 +174,9 @@
           </div>
         </div>
 
-        <!-- Hasil absensi terakhir -->
+        <!-- Hasil absensi terakhir (disembunyikan sementara, lihat `tampilkanHasilTerakhir`) -->
         <div
-          v-if="result"
+          v-if="tampilkanHasilTerakhir && result"
           class="rounded-2xl border bg-white p-5 shadow-sm"
           :class="result.ok ? 'border-emerald-200' : 'border-amber-200'"
         >
@@ -225,16 +246,6 @@
             Notifikasi WhatsApp tidak dikirim — kontak wali ber-consent belum tersedia atau fitur dinonaktifkan
           </div>
         </div>
-
-        <!-- Pesan error scan -->
-        <p
-          v-if="scanError"
-          class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-          role="alert"
-        >
-          <TriangleAlert class="h-4 w-4 shrink-0" />
-          {{ scanError }}
-        </p>
       </div>
 
       <!-- Kolom kanan: live log absensi -->
@@ -350,10 +361,29 @@ const api = useApi()
 /** Konfirmasi sebelum keluar dari mode kiosk. */
 const { leaveModalOpen, requestLeave, confirmLeave, cancelLeave } = useLeaveGuard()
 
-const modeOptions = [
+/**
+ * Mode fingerprint disembunyikan sementara: perangkat sidik jari belum bisa
+ * dipakai di lapangan, jadi pemindaian selalu berakhir dengan pesan gagal.
+ * Seluruh kode fingerprint sengaja dibiarkan utuh — ubah flag ini ke `true`
+ * untuk memunculkan kembali tombol mode & panel sidik jarinya.
+ */
+const tampilkanFingerprint = false
+
+/**
+ * Kartu "Hasil absensi terakhir" di bawah kamera disembunyikan sementara:
+ * informasinya sudah terwakili pop notifikasi di atas dan riwayat scan di
+ * kanan. Ubah ke `true` untuk menampilkan kartunya lagi.
+ */
+const tampilkanHasilTerakhir = false
+
+const semuaMode = [
   { value: 'face', label: 'Wajah', icon: ScanFace },
   { value: 'fingerprint', label: 'Fingerprint', icon: Fingerprint },
 ] as const
+
+const modeOptions = computed(() =>
+  tampilkanFingerprint ? semuaMode : semuaMode.filter((opt) => opt.value !== 'fingerprint'),
+)
 
 const {
   videoRef,
@@ -375,13 +405,36 @@ const scanError = ref('')
 const fingerprintScanning = ref(false)
 const processing = ref(false)
 const autoScan = ref(true)
-/** Jendela absen dari server (batas jam). */
-const window = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
+/** Jendela absen dari server (jadwal per hari, libur, hari aktif). */
+const window = ref<ApiAttendanceWindow | null>(null)
 const now = ref(new Date())
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let resumeTimer: ReturnType<typeof setTimeout> | null = null
 let fingerprintTimer: ReturnType<typeof setTimeout> | null = null
+let noticeTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Lama pop notifikasi di bawah kamera tampil sebelum hilang sendiri. */
+const NOTICE_DURATION = 5000
+
+/** Tutup pop notifikasi lebih awal (tombol X). */
+const dismissNotice = () => {
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = null
+  scanError.value = ''
+}
+
+// Setiap pesan scan baru otomatis tampil sebagai pop, lalu hilang sendiri.
+watch(scanError, (message) => {
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = null
+  if (!message) return
+
+  noticeTimer = setTimeout(() => {
+    noticeTimer = null
+    scanError.value = ''
+  }, NOTICE_DURATION)
+})
 
 /* ---------- Format ---------- */
 const toIsoDate = (date: Date) =>
@@ -401,16 +454,18 @@ const longDateFormat = new Intl.DateTimeFormat('id-ID', {
   year: 'numeric',
 })
 
-/** Menit sejak tengah malam dari "HH:MM". */
-const keMenit = (jam: string) => {
+/** Menit sejak tengah malam dari "HH:MM" (null bila tidak valid). */
+const keMenit = (jam: string | null | undefined) => {
+  if (!jam) return null
   const [h, m] = jam.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
   return (h ?? 0) * 60 + (m || 0)
 }
 
 /** Sesi menurut jam server (dipakai saat override manual tidak aktif). */
 const sesiOtotomatis = computed<Session>(() => {
   const menitSekarang = now.value.getHours() * 60 + now.value.getMinutes()
-  const pulangFrom = window.value ? keMenit(window.value.pulang_from) : 15 * 60
+  const pulangFrom = keMenit(window.value?.pulang_from) ?? 15 * 60
   return menitSekarang >= pulangFrom ? 'pulang' : 'masuk'
 })
 
@@ -634,7 +689,26 @@ onMounted(async () => {
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer)
   if (resumeTimer) clearTimeout(resumeTimer)
+  if (noticeTimer) clearTimeout(noticeTimer)
   stopFingerprint()
   stopScan()
 })
 </script>
+
+<style scoped>
+/* Pop notifikasi di bawah area kamera: muncul/hilang halus tanpa menggeser layout. */
+.notice-pop {
+  transform: translateX(-50%);
+}
+
+.notice-pop-enter-active,
+.notice-pop-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.notice-pop-enter-from,
+.notice-pop-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+}
+</style>

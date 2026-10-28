@@ -15,6 +15,7 @@ class ImportStudentsRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ];
     }
 }

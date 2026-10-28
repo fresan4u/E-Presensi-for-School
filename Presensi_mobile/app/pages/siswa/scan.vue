@@ -4,7 +4,6 @@ useHead({ title: 'Scan Wajah · Absensi Digital' })
 const router = useRouter()
 const api = useApi()
 const { fetchMe } = useStudentAuth()
-const config = useRuntimeConfig()
 
 const {
   videoRef,
@@ -19,24 +18,29 @@ const {
 const submitting = ref(false)
 const notice = ref('')
 const showHelp = ref(false)
-/** Absen mandiri ditolak server (di luar jendela jam). */
+/** Absen mandiri ditolak server (libur, hari nonaktif, atau di luar jendela). */
 const closed = ref(false)
-/** Batas jam dari server, untuk label sesi & pesan. */
-const jendela = ref<{ self_cutoff: string; handover_at: string; pulang_from: string } | null>(null)
+/** Ringkasan jendela absensi dari server (jadwal per hari + libur). */
+const jendela = ref<ApiAttendanceWindow | null>(null)
 
-/** Titik & radius area sekolah; diambil dari backend saat halaman dibuka. */
-const schoolLat = ref(Number(config.public.schoolLat))
-const schoolLng = ref(Number(config.public.schoolLng))
-const radiusMeter = ref(Number(config.public.schoolRadius) || 100)
+/** Fallback koordinat bila endpoint lokasi gagal dihubungi. */
+const schoolLat = ref(-6.18841)
+const schoolLng = ref(106.924823)
+const radiusMeter = ref(100)
 
 /**
- * Saklar geofencing. Saat ini dimatikan (default `false`): absensi tidak lagi
- * diblokir oleh lokasi. Nyalakan lewat env NUXT_PUBLIC_GEOFENCE_ENABLED=true.
+ * Saklar geofencing mengikuti pengaturan admin di server, bukan env build.
+ * Klien tetap menghitung jarak untuk umpan balik cepat; keputusan akhir
+ * (termasuk akurasi & radius) tetap di backend.
  */
-const geofenceAktif = computed(() => String(config.public.geofenceEnabled) === 'true')
+const geofenceAktif = ref(false)
 
 /** State geofencing */
-const lokasi = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
+const lokasi = ref<{ lat: number | null; lng: number | null; accuracy: number | null }>({
+  lat: null,
+  lng: null,
+  accuracy: null,
+})
 const jarak = ref<number>(0)
 const statusLokasi = ref<'loading' | 'valid' | 'invalid' | 'error'>('loading')
 const errorMessageLokasi = ref('')
@@ -60,7 +64,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
 function prosesLokasi(position: GeolocationPosition) {
   const lat = position.coords.latitude
   const lng = position.coords.longitude
-  lokasi.value = { lat, lng }
+  lokasi.value = { lat, lng, accuracy: position.coords.accuracy }
 
   const jarakHitung = getDistance(lat, lng, schoolLat.value, schoolLng.value)
   jarak.value = Math.round(jarakHitung)
@@ -87,11 +91,12 @@ const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
   if (!jendela.value) return 'masuk'
   const now = new Date()
   const menitSekarang = now.getHours() * 60 + now.getMinutes()
-  const menit = (jam: string) => {
+  const menit = (jam: string | null) => {
+    if (!jam) return null
     const [h, m] = jam.split(':').map(Number)
     return (h ?? 0) * 60 + (m || 0)
   }
-  return menitSekarang >= menit(jendela.value.pulang_from) ? 'pulang' : 'masuk'
+  return menitSekarang >= (menit(jendela.value.pulang_from) ?? 15 * 60) ? 'pulang' : 'masuk'
 })
 
 const labelSesi = computed(() => (sesiSaatIni.value === 'pulang' ? 'Absen Pulang' : 'Absen Masuk'))
@@ -108,26 +113,34 @@ function goBack() {
 onMounted(async () => {
   fetchMe().catch(() => {})
 
-  // Batas jam absen dari server (sumber kebenaran) untuk label & pesan.
+  // Batas jam & status hari dari server (sumber kebenaran) untuk label & pesan.
   try {
     const meta = await api.studentMeta()
     jendela.value = meta.data.attendance_window
+
+    if (!jendela.value.is_open) {
+      closed.value = true
+      notice.value = jendela.value.message
+        || 'Absensi mandiri sedang ditutup. Hubungi petugas bila perlu.'
+    }
   } catch {
     // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.
   }
 
-  if (geofenceAktif.value) {
-    // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
-    // area absensi tanpa deploy ulang. Gagal fetch = pakai nilai env/config.
-    try {
-      const lokasiSekolah = await api.schoolLocation()
-      schoolLat.value = lokasiSekolah.data.latitude
-      schoolLng.value = lokasiSekolah.data.longitude
-      radiusMeter.value = lokasiSekolah.data.radius_meter
-    } catch {
-      // Abaikan: fallback config tetap dipakai.
-    }
+  // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
+  // area absensi tanpa deploy ulang.
+  try {
+    const lokasiSekolah = await api.schoolLocation()
+    schoolLat.value = lokasiSekolah.data.latitude
+    schoolLng.value = lokasiSekolah.data.longitude
+    radiusMeter.value = lokasiSekolah.data.radius_meter
+    geofenceAktif.value = lokasiSekolah.data.geofence_enabled
+      && lokasiSekolah.data.configured
+  } catch {
+    // Abaikan: fallback config tetap dipakai.
+  }
 
+  if (geofenceAktif.value) {
     // Geofencing: pantau lokasi siswa secara real-time.
     statusLokasi.value = 'loading'
     if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
@@ -140,8 +153,8 @@ onMounted(async () => {
       prosesError()
     }
   } else {
-    // Fitur lokasi dimatikan sementara: tidak minta izin GPS dan tidak
-    // memblokir absensi. Koordinat tetap dikirim bila nanti diaktifkan lagi.
+    // Geofence nonaktif: tidak minta izin GPS dan tidak memblokir absensi.
+    // Koordinat tetap dikirim bila tersedia sebagai jejak.
     statusLokasi.value = 'valid'
     errorMessageLokasi.value = ''
   }
@@ -174,8 +187,14 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
 
   try {
     // Sesi TIDAK dikirim: server menentukan masuk/pulang dari jam.
-    // Kirim koordinat GPS untuk geofencing & history.
-    const res = await api.studentScan(descriptor, photo, lokasi.value.lat, lokasi.value.lng)
+    // Kirim koordinat & akurasi GPS untuk geofencing + jejak absensi.
+    const res = await api.studentScan(
+      descriptor,
+      photo,
+      lokasi.value.lat,
+      lokasi.value.lng,
+      lokasi.value.accuracy,
+    )
     lastScan.value = res
     stopFaceScan()
     router.push('/siswa/berhasil')
@@ -196,10 +215,27 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
       return
     }
 
+    if (kode === 'outside_school_area') {
+      statusLokasi.value = 'invalid'
+      stopFaceScan()
+      notice.value = apiErrorMessage(error)
+      submitting.value = false
+      return
+    }
+
+    if (kode === 'location_required' || kode === 'location_not_configured') {
+      statusLokasi.value = 'error'
+      errorMessageLokasi.value = apiErrorMessage(error)
+      stopFaceScan()
+      notice.value = apiErrorMessage(error)
+      submitting.value = false
+      return
+    }
+
     notice.value = apiErrorMessage(error)
     submitting.value = false
     // Ulangi pemindaian setelah gangguan sementara.
-    if (statusLokasi.value === 'valid') {
+    if (statusLokasi.value === 'valid' && !closed.value) {
       startFaceScan()
     }
   }

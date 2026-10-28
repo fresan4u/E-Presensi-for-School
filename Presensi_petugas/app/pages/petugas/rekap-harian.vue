@@ -5,6 +5,18 @@
       title="Filter Rekap"
       subtitle="Pilih tanggal dan kelas untuk menampilkan rekap kehadiran."
     >
+      <!-- Export selalu tampil di menu Rekap (satu tombol, format Excel). -->
+      <template #actions>
+        <base-button
+          variant="solid"
+          data-testid="export-xlsx"
+          @click="exportExcel"
+        >
+          <Download class="h-4 w-4" />
+          Export
+        </base-button>
+      </template>
+
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <label class="flex flex-col gap-2">
           <span class="text-sm font-medium text-slate-800">Tanggal</span>
@@ -96,22 +108,11 @@
       </div>
 
       <!-- Toolbar tabel -->
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h3 class="text-base font-semibold text-slate-800">
-            {{ recap?.classroom?.name ?? 'Kelas' }}
-          </h3>
-          <p class="text-sm text-gray-500">{{ longDate }}</p>
-        </div>
-        <base-button
-          variant="solid"
-          :disabled="!rows.length"
-          data-testid="export-xlsx"
-          @click="exportExcel"
-        >
-          <Download class="h-4 w-4" />
-          Export Excel
-        </base-button>
+      <div>
+        <h3 class="text-base font-semibold text-slate-800">
+          {{ recap?.classroom?.name ?? 'Kelas' }}
+        </h3>
+        <p class="text-sm text-gray-500">{{ longDate }}</p>
       </div>
 
       <!-- Tabel rekap -->
@@ -129,7 +130,18 @@
           </span>
         </template>
         <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end">
+          <div class="flex items-center justify-end gap-2">
+            <button
+              v-if="row.attendanceId"
+              type="button"
+              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-900 text-white transition-colors hover:bg-emerald-800 focus:outline-none"
+              :aria-label="`Edit ${String(row.name)}`"
+              title="Edit status / catatan"
+              data-testid="edit-row"
+              @click="openEdit(row)"
+            >
+              <Pencil class="h-4 w-4" />
+            </button>
             <div v-if="row.waHref" class="flex flex-col items-end gap-1">
               <a
                 :href="String(row.waHref)"
@@ -154,12 +166,15 @@
           </div>
         </template>
       </data-table>
+
+      <!-- Modal edit status / catatan (pindahan dari Data Absensi) -->
+      <edit-attendance-modal v-model="isEditOpen" :row="editingRow" @saved="handleSaved" />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Download, FolderOpen, MessageCircle, TriangleAlert } from '@lucide/vue'
+import { Download, FolderOpen, MessageCircle, Pencil, TriangleAlert } from '@lucide/vue'
 import type { TableColumn } from '#layers/shared/app/components/table/DataTable.vue'
 import type {
   ApiAcademicYear,
@@ -265,10 +280,12 @@ const rows = computed<Record<string, unknown>[]>(() =>
 
     return {
       id: student.id,
+      attendanceId: student.attendance_id,
       nis: student.nis,
       name: student.full_name,
       status: student.status.code,
       waktu: formatTime(student.checked_at),
+      catatan: student.note,
       needsNotice,
       guardianName: guardian?.name ?? '',
       guardianMaskedPhone: guardian ? maskPhone(guardian.phone) : '',
@@ -335,6 +352,39 @@ const exportExcel = async () => {
 
   const slug = (recap.value.classroom?.name ?? 'kelas').replace(/\s+/g, '-').toLowerCase()
   XLSX.writeFile(workbook, `rekap-${slug}-${selectedDate.value}.xlsx`)
+}
+
+/* ---------- Edit status / catatan (pindahan dari Data Absensi) ---------- */
+const isEditOpen = ref(false)
+const editingRow = ref<AttendanceRecord | null>(null)
+
+const openEdit = (row: Record<string, unknown>) => {
+  editingRow.value = {
+    id: Number(row.attendanceId),
+    nis: String(row.nis),
+    name: String(row.name),
+    kelas: recap.value?.classroom?.name ?? '-',
+    tanggal: longDate.value,
+    jamMasuk: String(row.waktu),
+    jamKeluar: '--:--',
+    metode: 'face recognition',
+    status: row.status as AttendanceStatus,
+    catatan: (row.catatan as string | null) ?? undefined,
+  }
+  isEditOpen.value = true
+}
+
+const handleSaved = async (updated: AttendanceRecord) => {
+  try {
+    await api.updateAttendance(updated.id, {
+      status: updated.status,
+      note: updated.catatan ?? null,
+    })
+    isEditOpen.value = false
+    await loadRecap()
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error)
+  }
 }
 
 /* ---------- Watch ---------- */

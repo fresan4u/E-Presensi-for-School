@@ -138,6 +138,21 @@ Menu **Kelola Petugas** (`/kelola-petugas`): kelola akun petugas — tambah, uba
 aktif/nonaktif, dan hapus. Akun yang sedang login tidak bisa menghapus/menonaktifkan
 dirinya sendiri.
 
+Menu **Pengaturan** (`/pengaturan`, khusus admin) berisi empat tab:
+
+- **Umum** — saklar absensi mandiri dan notifikasi WhatsApp. (Ambang kecocokan
+  wajah & jumlah sampel tidak ditampilkan di UI; nilainya tetap bisa diatur
+  lewat `PUT /settings` bila diperlukan.)
+- **Jadwal Absensi** — jam masuk/pulang, jam serah-terima, dan batas terlambat
+  untuk masing-masing hari Senin–Minggu. Hari nonaktif tidak membuka absensi mandiri.
+- **Hari Libur** — kalender libur per tahun; tanggal libur menutup absensi mandiri.
+- **Lokasi** — titik pusat, radius, dan saklar geofence (ditegakkan di server).
+  Halaman lama `/lokasi-sekolah` dialihkan ke tab ini.
+
+Semua perubahan dicatat di `settings_audit_logs` dan bisa dilihat pada tab
+**Riwayat**. Hanya role `admin` yang bisa membuka endpoint pengaturan; petugas
+tetap memakai endpoint operasional seperti biasa.
+
 > Menghapus siswa juga menghapus sampel wajah & riwayat absensinya (relasi cascade).
 > Demi privasi, endpoint `face-descriptors` **tidak** mengembalikan vektor descriptor —
 > hanya metadata (nomor sampel, waktu, kualitas).
@@ -151,36 +166,46 @@ Descriptor disimpan sebagai **kolom JSON per sampel** di `student_face_descripto
   (halaman layar penuh, wajib login). Keduanya mode kiosk: bila ditinggalkan
   (tombol **Keluar**, tombol back, atau tutup/reload tab) akan muncul
   konfirmasi agar pemindaian tidak terhenti tanpa sengaja.
-- **Sesi ditentukan otomatis dari jam** (bukan dipilih manual): sebelum
-  `pulang_from` (15:00) sesi `masuk`, sesudahnya `pulang`. Petugas tetap bisa
-  menekan tombol **Otomatis/Manual** untuk override — mis. mencatat pulang cepat
-  karena sakit di luar jam pulang.
+- **Sesi ditentukan otomatis dari jam server** (bukan dipilih manual): sebelum
+  `pulang_from` hari itu sesi `masuk`, sesudahnya `pulang`. Nilai jadwal dibaca
+  dari tabel `attendance_schedules`, jadi Jumat bisa pulang lebih awal. Petugas
+  tetap bisa menekan tombol **Otomatis/Manual** untuk override — mis. mencatat
+  pulang cepat karena sakit di luar jam pulang.
 - Browser mengirim descriptor ke `POST /api/v1/attendance/scan`.
-- Server mencocokkan dengan **jarak Euclidean**, threshold `config('face.match_threshold')` (0.6),
+- Server mencocokkan dengan **jarak Euclidean**, threshold
+  `config('settings')['face.match_threshold']` (default 0.6, bisa diubah admin),
   hanya untuk siswa berstatus **aktif**.
 - Hasil: `404 face_not_recognized` bila tidak ada yang cocok; selain itu record
   absensi dibuat dengan `firstOrCreate` (idempotent per `student + tanggal + sesi`).
-- Status sesi: **mode demo** — setiap absensi tercatat **hadir**. Logika
-  `terlambat` berbasis `boundary_time` sengaja dikomentari di
-  `AttendanceController::resolveStatus` sampai demo selesai.
+- Status **terlambat** memakai `late_after` dari jadwal hari itu; bila kosong,
+  fallback ke `attendance_sessions.boundary_time`.
 
 ## Jendela Absen Mandiri (app Siswa)
 
-Absen mandiri lewat HP hanya terbuka pada dua jendela (`config/presensi.php` →
-`attendance`):
+Jadwal absensi mandiri disimpan di database (`attendance_schedules`) dan diatur
+admin lewat **Pengaturan → Jadwal Absensi**. Default-nya:
 
-| Jam | Sesi | Keterangan |
-| --- | ---- | ---------- |
-| 00:00 – **07:00** (`self_cutoff`) | masuk | Siswa scan dari HP |
-| **06:40** (`handover_at`) – 07:00 | masuk | Zona serah-terima ke petugas |
-| > 07:00 dan < **15:00** | — | Ditutup; siswa yang perlu absen dibantu petugas |
-| **15:00** (`pulang_from`) – 23:59 | pulang | Siswa scan dari HP |
+| Hari | Masuk | Pulang | Keterangan |
+| --- | ----- | ------ | ---------- |
+| Senin–Kamis | 00:00 – **07:00** | **15:00** – 23:59 | Jam kerja normal |
+| Jumat | 00:00 – **07:00** | **11:30** – 23:59 | Pulang lebih awal |
+| Sabtu–Minggu | — | — | Hari nonaktif |
 
-Di luar jendela tersebut `POST /student/attendance/scan` membalas `422`
-berkode `attendance_closed`. Sesi **tidak dikirim klien**: server yang
-menentukan `masuk`/`pulang` dari jam, sehingga siswa tidak bisa mengaku absen
-pulang pada pagi hari. Petugas selalu bisa mencatat manual lewat
-`POST /attendances` (atau override di mesin absen).
+Tanggal yang terdaftar di **Hari Libur** menutup absensi mandiri sepanjang hari,
+meskipun harinya aktif. Saklar **Absensi Mandiri** di tab Umum juga bisa
+menonaktifkan fitur tanpa mengubah jadwal.
+
+Di luar jendela tersebut `POST /student/attendance/scan` membalas `422` berkode
+`attendance_closed` dengan `reason` (`holiday`, `not_school_day`, `disabled`,
+atau `outside_window`). Sesi **tidak dikirim klien**: server yang menentukan
+`masuk`/`pulang` dari jam, sehingga siswa tidak bisa mengaku absen pulang pada
+pagi hari. Petugas selalu bisa mencatat manual lewat `POST /attendances` (atau
+override di mesin absen).
+
+Bila **geofence** diaktifkan admin, server juga menolak scan tanpa koordinat
+(`location_required`), di luar radius (`outside_school_area`), atau saat titik
+sekolah belum diatur (`location_not_configured`). Jarak & akurasi GPS disimpan
+di kolom `distance_meter` dan `gps_accuracy_meter`.
 
 ## App Siswa (`Presensi_mobile`, `:3002`) — Level 2
 
@@ -198,7 +223,11 @@ dengan admin/petugas) dan kamera nyata lewat `useFaceScanner`.
   hanya dengan wajah terdaftar milik akun yang sedang login**, sehingga tidak
   bisa titip absen.
 - **Sesi masuk/pulang otomatis**: tidak ada lagi toggle di HP; tombol scan
-  otomatis menyesuaikan sesi dan dinonaktifkan bila di luar jendela jam.
+  otomatis menyesuaikan sesi dan dinonaktifkan bila di luar jendela jam, hari
+  libur, atau hari nonaktif.
+- **Geofence dari server**: app membaca `GET /school-location` saat halaman scan
+  dibuka. Bila admin mengaktifkan geofence, siswa harus berada di dalam radius
+  dan server tetap menjadi penentu akhir.
 - Sesi login memakai token Sanctum di cookie `presensi-student-token`
   (dipasang otomatis sebagai header `Authorization` oleh `useApi`).
 - Data siswa ditampilkan minimal: **NIS, nama lengkap, kelas**.
@@ -246,8 +275,16 @@ saat dibutuhkan, dan data uji otomatis memakai factory (`StudentFactory`,
 | POST | `/auth/login` | Login panel admin/petugas (email + password) → token Sanctum (throttle 10/menit) |
 | GET | `/auth/me` | Profil user panel yang login (butuh token) |
 | POST | `/auth/logout` | Cabut token panel yang aktif |
-| GET | `/meta` | Lookup status/metode/sesi + konfigurasi wajah + `attendance_window` (batas jam absen) |
+| GET | `/meta` | Lookup status/metode/sesi + konfigurasi wajah + `attendance_window` (jadwal & status hari ini) |
 | GET | `/classrooms` `/majors` `/academic-years` | Master data |
+| GET | `/settings` | Baca pengaturan operasional + status jendela absensi (**khusus admin**) |
+| PUT | `/settings` | Ubah saklar absensi, threshold wajah, & notifikasi WA (**khusus admin**) |
+| GET | `/settings/audit` | Riwayat perubahan pengaturan (**khusus admin**) |
+| GET/PUT | `/attendance-schedules` | Baca / ubah jadwal 7 hari (**khusus admin**) |
+| GET/POST | `/school-holidays` | Kalender hari libur per tahun / tambah (**khusus admin**) |
+| PUT/DELETE | `/school-holidays/{holiday}` | Ubah / hapus hari libur (**khusus admin**) |
+| GET | `/school-location` | Titik & radius sekolah (**publik**, dibaca app siswa) |
+| PUT | `/school-location` | Simpan titik, radius, & saklar geofence (**khusus admin**) |
 | GET/POST | `/students` | List (search & filter) / tambah (termasuk `guardians[]`) |
 | GET/PUT/PATCH/DELETE | `/students/{student}` | Detail / ubah / hapus |
 | POST | `/students/import` | Impor massal CSV (+ kolom wali opsional) |
@@ -268,11 +305,13 @@ saat dibutuhkan, dan data uji otomatis memakai factory (`StudentFactory`,
 
 > **Semua endpoint operasional admin/petugas terkunci `auth:sanctum`.** Login
 > panel memakai `POST /auth/login`; token dikirim app lewat header
-> `Authorization` (cookie `presensi-auth-token`). Satu-satunya endpoint publik
-> adalah `POST /attendance/scan` (kiosk `/scan`) dan route login
-> (`/auth/login`, `/student/login`). Token siswa dan petugas memakai guard yang
-> sama, jadi endpoint panel dijaga `EnsurePanelUser` (hanya akun `User`) dan
-> endpoint siswa dijaga `EnsureStudent` (hanya akun `Student`).
+> `Authorization` (cookie `presensi-auth-token`). Endpoint publik hanya
+> `POST /attendance/scan` (kiosk `/scan`), `GET /school-location` (dibaca app
+> siswa), dan route login (`/auth/login`, `/student/login`). Token siswa dan
+> petugas memakai guard yang sama, jadi endpoint panel dijaga `EnsurePanelUser`
+> (hanya akun `User`) dan endpoint siswa dijaga `EnsureStudent` (hanya akun
+> `Student`). Endpoint pengaturan menambah `EnsureAdmin`, sehingga petugas
+> mendapat `403`.
 
 Filter `GET /attendances` mendukung `student_id`, `date`, `session`, `status`,
 `per_page` — dipakai app mobile untuk beranda/riwayat.

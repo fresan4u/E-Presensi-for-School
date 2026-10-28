@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             AttendanceStatusSeeder::class,
             AttendanceMethodSeeder::class,
             AttendanceSessionSeeder::class,
+            AttendanceScheduleSeeder::class,
             AcademicYearSeeder::class,
             GradeLevelSeeder::class,
             MajorSeeder::class,

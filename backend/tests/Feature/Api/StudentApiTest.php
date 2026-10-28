@@ -4,11 +4,14 @@ namespace Tests\Feature\Api;
 
 use App\Models\Classroom;
 use App\Models\Guardian;
+use App\Models\StudentClassEnrollment;
+use App\Models\StudentStatus;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Laravel\Sanctum\Sanctum;
+use App\Models\AcademicYear;
 use Tests\TestCase;
 
 class StudentApiTest extends TestCase
@@ -233,5 +236,144 @@ class StudentApiTest extends TestCase
         $this->assertSame('7766', $student->pin);
         $this->assertFalse($student->must_change_pin);
         $this->assertNull($student->pin_changed_at);
+    }
+
+
+    public function test_filter_students_by_academic_year(): void
+    {
+        $year = AcademicYear::create([
+            'label' => '2027/2028',
+            'start_date' => '2027-07-01',
+            'end_date' => '2028-06-30',
+            'is_active' => false,
+        ]);
+
+        $student = Student::factory()->create(['nis' => '7771']);
+        StudentClassEnrollment::create([
+            'student_id' => $student->id,
+            'classroom_id' => Classroom::first()->id,
+            'academic_year_id' => $year->id,
+            'is_active' => true,
+        ]);
+
+        $this->getJson("/api/v1/students?academic_year_id={$year->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.nis', '7771');
+    }
+
+    public function test_filter_students_without_enrollment(): void
+    {
+        $student = Student::factory()->create(['nis' => '7772-custom']);
+
+        $this->getJson("/api/v1/students?unassigned=1&search=7772-custom")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.nis', '7772-custom');
+    }
+
+    public function test_import_students_to_specific_academic_year(): void
+    {
+        $year = AcademicYear::create([
+            'label' => '2028/2029',
+            'start_date' => '2028-07-01',
+            'end_date' => '2029-06-30',
+            'is_active' => false,
+        ]);
+
+        $csv = "nis,full_name,grade_level,major,rombel,status\n"
+            ."7801,Nama Import,10,MI,1,aktif\n";
+
+        $file = UploadedFile::fake()->createWithContent('siswa.csv', $csv);
+
+        $this->post('/api/v1/students/import', [
+            'file' => $file,
+            'academic_year_id' => $year->id,
+        ], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('data.created', 1);
+
+        $student = Student::where('nis', '7801')->firstOrFail();
+        $this->assertDatabaseHas('student_class_enrollments', [
+            'student_id' => $student->id,
+            'academic_year_id' => $year->id,
+        ]);
+    }
+
+    public function test_bulk_deactivate_for_specific_year(): void
+    {
+        $year = AcademicYear::create([
+            'label' => '2027/2028',
+            'start_date' => '2027-07-01',
+            'end_date' => '2028-06-30',
+            'is_active' => false,
+        ]);
+
+        $student1 = Student::factory()->create(['nis' => '7802']);
+        $student2 = Student::factory()->create(['nis' => '7803']);
+
+        StudentClassEnrollment::create([
+            'student_id' => $student1->id,
+            'classroom_id' => Classroom::first()->id,
+            'academic_year_id' => $year->id,
+            'is_active' => true,
+        ]);
+
+        StudentClassEnrollment::create([
+            'student_id' => $student2->id,
+            'classroom_id' => Classroom::first()->id,
+            'academic_year_id' => $year->id,
+            'is_active' => true,
+        ]);
+
+        $this->postJson('/api/v1/students/bulk-action', [
+            'academic_year_id' => $year->id,
+            'action' => 'deactivate',
+            'ids' => [$student1->id, $student2->id],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('students', ['id' => $student1->id, 'status_id' => StudentStatus::where('code', 'non_aktif')->value('id')]);
+        $this->assertDatabaseHas('student_class_enrollments', ['student_id' => $student1->id, 'academic_year_id' => $year->id, 'is_active' => false]);
+    }
+
+    public function test_bulk_action_requires_year_scope(): void
+    {
+        $year = AcademicYear::create([
+            'label' => '2027/2028',
+            'start_date' => '2027-07-01',
+            'end_date' => '2028-06-30',
+            'is_active' => false,
+        ]);
+
+        $student = Student::factory()->create(['nis' => '7804']);
+
+        $response = $this->postJson('/api/v1/students/bulk-action', [
+            'academic_year_id' => $year->id,
+            'action' => 'delete',
+            'ids' => [$student->id],
+        ]);
+
+        $response->assertUnprocessable();
+    }
+
+    public function test_year_filter_applies_to_attendances(): void
+    {
+        $year = AcademicYear::create([
+            'label' => '2026/2027-TEST',
+            'start_date' => '2026-07-01',
+            'end_date' => '2027-06-30',
+            'is_active' => false,
+        ]);
+
+        $student = Student::factory()->create(['nis' => '7805']);
+        StudentClassEnrollment::create([
+            'student_id' => $student->id,
+            'classroom_id' => Classroom::first()->id,
+            'academic_year_id' => $year->id,
+            'is_active' => true,
+        ]);
+
+        $this->getJson("/api/v1/attendances?academic_year_id={$year->id}&per_page=10")
+            ->assertOk();
     }
 }
