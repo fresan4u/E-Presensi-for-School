@@ -1,0 +1,10 @@
+node_modules
+auth
+qr.png
+qr.png.tmp
+.env
+.env.*
+!.env.example
+*.log
+.git
+.gitignore

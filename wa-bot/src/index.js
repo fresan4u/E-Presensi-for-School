@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { enqueueSend, sendPhoto, sendText } from './send.js';
@@ -31,16 +33,38 @@ function requireSecret(req, res, next) {
   next();
 }
 
+/**
+ * Khusus endpoint QR: secret boleh dikirim lewat header atau query `?secret=`,
+ * supaya gambar QR bisa dibuka langsung dari browser saat pairing di Railway.
+ * Hapus public domain setelah pairing selesai.
+ */
+function requireSecretOrQuery(req, res, next) {
+  if (!config.secret) {
+    return res.status(500).json({ ok: false, error: 'WA_SECRET belum diisi di wa-bot/.env' });
+  }
+
+  if (!secretMatches(req.get('x-api-secret') ?? req.query.secret)) {
+    return res.status(401).json({ ok: false, error: 'secret tidak cocok' });
+  }
+
+  next();
+}
+
 /** Status kesiswaan service — dipanggil `php artisan wa:status` & uptime check. */
 app.get('/health', (req, res) => {
-  res.json({ ok: true, connected: isReady(), user: whoAmI() });
+  res.json({
+    ok: true,
+    connected: isReady(),
+    user: whoAmI(),
+    qr_available: !isReady() && existsSync(resolve(config.qrFile)),
+  });
 });
 
 /**
  * QR terbaru untuk menautkan perangkat baru (dilindungi secret karena
  * QR = akses penuh ke akun). Berguna kalau terminal wa-bot tidak terlihat.
  */
-app.get('/qr', requireSecret, async (req, res) => {
+app.get('/qr', requireSecretOrQuery, async (req, res) => {
   if (isReady()) {
     return res.json({ ok: true, connected: true, qr: null, qr_file: config.qrFile });
   }
@@ -58,6 +82,29 @@ app.get('/qr', requireSecret, async (req, res) => {
   }
 
   res.json({ ok: true, connected: false, qr, qr_file: config.qrFile });
+});
+
+/**
+ * Gambar QR terbaru untuk pairing. Dipakai di Railway karena terminal/log
+ * tidak nyaman untuk scan QR. Refresh halaman bila QR kedaluwarsa.
+ * URL: /qr.png?secret=<WA_SECRET>
+ */
+app.get('/qr.png', requireSecretOrQuery, (req, res) => {
+  if (isReady()) {
+    return res.status(409).type('text/plain').send('WhatsApp sudah terhubung — QR tidak diperlukan.');
+  }
+
+  const file = resolve(config.qrFile);
+
+  if (!existsSync(file)) {
+    return res
+      .status(503)
+      .type('text/plain')
+      .send('QR belum tersedia — tunggu beberapa detik lalu refresh.');
+  }
+
+  res.set('Cache-Control', 'no-store, max-age=0');
+  res.type('png').sendFile(file);
 });
 
 /**
@@ -123,7 +170,9 @@ startSession()
       if (config.pairingNumber) {
         console.log(`[wa-bot] Mode pairing code: ${config.pairingNumber}`);
       } else {
-        console.log(`[wa-bot] Mode QR — QR juga ditulis ke ${config.qrFile} (endpoint: GET /qr)`);
+        console.log(
+          `[wa-bot] Mode QR — QR juga ditulis ke ${config.qrFile} (endpoint: GET /qr.png?secret=<WA_SECRET>)`,
+        );
       }
     });
   })

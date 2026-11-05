@@ -4,7 +4,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
-import { rename } from 'node:fs/promises';
+import { rename, rm } from 'node:fs/promises';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import qrcode from 'qrcode-terminal';
@@ -154,6 +154,8 @@ export async function startSession() {
       connected = true;
       latestQr = null;
       me = sock.user?.id ?? null;
+      // QR berisi akses login penuh; hapus dari volume setelah berhasil dipakai.
+      await rm(config.qrFile, { force: true }).catch(() => {});
       console.log(`\n[wa-bot] ✅ Terhubung ke WhatsApp sebagai ${sock.user?.name ?? '?'} (${me})`);
     }
 

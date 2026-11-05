@@ -4,3 +4,7 @@ auth/
 
 # Gambar QR login terbaru (berisi tautan login — jangan di-commit)
 qr.png
+qr.png.tmp
+
+# Env lokal (berisi WA_SECRET)
+.env

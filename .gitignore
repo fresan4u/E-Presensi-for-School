@@ -32,3 +32,8 @@ Thumbs.db
 !.env.render
 .vercel
 .env*
+
+# `.env*` di atas menimpa pengecualian sebelumnya; template contoh tetap
+# dilacak agar setup lokal terdokumentasi.
+!.env.example
+!.env.render
