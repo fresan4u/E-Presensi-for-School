@@ -81,7 +81,10 @@ if [ "$FRESH" = "1" ]; then
   php artisan db:seed --force
 fi
 
-php artisan serve --host 0.0.0.0 --port "${PORT:-8000}" &
+# `--no-reload` wajib di container: tanpa flag ini Laravel hanya meneruskan
+# sebagian kecil env ke proses `php -S`, sehingga variabel Railway seperti
+# WA_ENABLED/WA_BOT_URL/WA_BOT_SECRET hilang dan fallback `.env` yang dipakai.
+php artisan serve --no-reload --host 0.0.0.0 --port "${PORT:-8000}" &
 
 while true; do
   php artisan schedule:run --no-interaction || true
