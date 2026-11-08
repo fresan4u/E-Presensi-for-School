@@ -39,11 +39,11 @@ const menus: { key: MenuKey; label: string; icon: 'home' | 'history' | 'user'; t
           :disabled="!menu.to"
           :aria-current="props.active === menu.key ? 'page' : undefined"
           class="flex w-full flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 transition active:scale-95 disabled:cursor-default disabled:active:scale-100"
-          :class="props.active === menu.key ? 'text-brand-700' : 'text-slate-400'"
+          :class="props.active === menu.key ? 'text-blue-700' : 'text-slate-400'"
         >
           <span
             class="flex h-8 w-12 items-center justify-center rounded-full transition"
-            :class="props.active === menu.key ? 'bg-brand-50' : ''"
+            :class="props.active === menu.key ? 'bg-blue-50' : ''"
           >
             <AppIcon
               :name="menu.icon"

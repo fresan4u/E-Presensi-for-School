@@ -27,6 +27,8 @@ type FaceApiModule = typeof import('face-api.js')
 
 const MODELS_URI = '/models'
 const SCAN_INTERVAL_MS = 250
+/** Batas tunggu elemen <video> muncul di halaman (ms). */
+const VIDEO_WAIT_MS = 3000
 
 const timeNow = () =>
   new Intl.DateTimeFormat('id-ID', {
@@ -75,6 +77,8 @@ export function useFaceScanner() {
   let stream: MediaStream | null = null
   let scanTimer: ReturnType<typeof setInterval> | null = null
   let detecting = false
+  /** Mencegah init() berjalan dua kali bersamaan. */
+  let initializing = false
 
   const stopTimer = () => {
     if (scanTimer) clearInterval(scanTimer)
@@ -85,6 +89,7 @@ export function useFaceScanner() {
    * Ambil frame video terkini sebagai data URI JPEG (foto bukti absensi).
    * Mengembalikan null bila video belum siap — perekaman foto bersifat
    * opsional dan tidak boleh menggagalkan scan.
+   * Frame diambil dari video asli (tidak dicerminkan), apa pun efek CSS-nya.
    */
   const captureFrame = (): string | null => {
     const video = videoRef.value
@@ -125,9 +130,25 @@ export function useFaceScanner() {
     modelsLoaded = true
   }
 
-  const startCamera = async () => {
-    if (stream) return
+  /**
+   * Tunggu elemen <video> terpasang di halaman. Halaman bisa merender
+   * <video> belakangan (mis. setelah lokasi tervalidasi), sehingga kamera
+   * tidak boleh langsung menyerah bila elemennya belum ada.
+   */
+  const waitForVideo = async (): Promise<HTMLVideoElement> => {
+    const startedAt = Date.now()
 
+    while (!videoRef.value) {
+      if (Date.now() - startedAt > VIDEO_WAIT_MS) {
+        throw new Error('Elemen video tidak ditemukan.')
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+
+    return videoRef.value
+  }
+
+  const startCamera = async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       throw Object.assign(
         new Error('Browser tidak mendukung akses kamera. Gunakan localhost atau HTTPS.'),
@@ -135,20 +156,28 @@ export function useFaceScanner() {
       )
     }
 
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
-      audio: false,
-    })
+    // Pastikan elemen video ada SEBELUM kamera diminta, supaya tidak ada
+    // stream yang menggantung bila elemennya tidak ditemukan.
+    const video = await waitForVideo()
 
-    const video = videoRef.value
-    if (!video) {
-      releaseStream()
-      throw new Error('Elemen video tidak ditemukan.')
+    if (!stream) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480, facingMode: 'user' },
+        audio: false,
+      })
     }
 
-    video.srcObject = stream
-    // Tunggu video benar-benar bisa diputar sebelum deteksi frame.
-    await video.play()
+    // Pasang ulang stream bila elemen video baru (mis. dirender ulang).
+    if (video.srcObject !== stream) video.srcObject = stream
+
+    try {
+      // Tunggu video benar-benar bisa diputar sebelum deteksi frame.
+      await video.play()
+    } catch (error) {
+      // Bersihkan supaya percobaan berikutnya mulai dari awal.
+      releaseStream()
+      throw error
+    }
   }
 
   const stopCamera = () => {
@@ -158,8 +187,11 @@ export function useFaceScanner() {
     if (status.value !== 'idle') status.value = 'idle'
   }
 
-  /** Muat model + nyalakan kamera. Panggil saat `onMounted`. */
+  /** Muat model + nyalakan kamera. Aman dipanggil ulang setelah gagal. */
   const init = async () => {
+    if (initializing) return
+
+    initializing = true
     status.value = 'loading'
     errorMessage.value = ''
     result.value = null
@@ -172,6 +204,8 @@ export function useFaceScanner() {
       status.value = 'error'
       errorMessage.value = describeError(error)
       console.error('[useFaceScanner] gagal inisialisasi:', error)
+    } finally {
+      initializing = false
     }
   }
 

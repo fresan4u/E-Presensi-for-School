@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ApiAttendanceWindow } from '#layers/shared/app/composables/useApi'
+
 useHead({ title: 'Beranda · Absensi Digital' })
 
 const { student, fetchMe } = useStudentAuth()
@@ -12,7 +14,7 @@ const absenMasuk = ref<ApiAttendance | null>(null)
 const absenPulang = ref<ApiAttendance | null>(null)
 /** Absensi terbaru (maks. 5). */
 const riwayatTerbaru = ref<ApiAttendance[]>([])
-/** Batas jam absen mandiri dari server, termasuk jadwal per hari & libur. */
+/** Batas jam & status hari ini dari server. */
 const jendela = ref<ApiAttendanceWindow | null>(null)
 /** Jam sekarang (untuk menentukan sesi & tombol tutup). */
 const sekarang = ref(new Date())
@@ -20,51 +22,62 @@ const sekarang = ref(new Date())
 const avatarInisial = computed(() => inisial(student.value?.full_name ?? ''))
 const tanggalHariIni = computed(() => tanggalPanjang(sekarang.value))
 
-/** Menit sejak tengah malam dari string "HH:MM" (null bila tidak valid). */
-function keMenit(jam: string | null | undefined): number | null {
-  if (!jam) return null
+/** Menit sejak tengah malam dari string "HH:MM". */
+function keMenit(jam: string): number {
   const [h, m] = jam.split(':').map(Number)
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
   return (h ?? 0) * 60 + (m || 0)
 }
 
-/** Sesi yang sedang berlaku menurut jam (fallback: masuk). */
+/** Sabtu atau Minggu (menurut jam perangkat). */
+const akhirPekan = computed(() => {
+  const hari = sekarang.value.getDay()
+  return hari === 0 || hari === 6
+})
+
+/** Libur dari server: hari nonaktif di jadwal atau tanggal merah/libur sekolah. */
+const liburServer = computed(
+  () => jendela.value?.is_holiday === true || jendela.value?.is_school_day === false,
+)
+
+/** Hari ini bukan hari presensi. */
+const hariLibur = computed(() => akhirPekan.value || liburServer.value)
+
+/** Pesan saat hari libur. */
+const pesanLibur = computed(() => {
+  if (akhirPekan.value) return 'Presensi akan dibuka pada hari Senin.'
+
+  const nama = jendela.value?.holiday_name
+  return nama
+    ? `Libur: ${nama}. Presensi dibuka kembali pada hari sekolah berikutnya.`
+    : 'Hari ini libur. Presensi dibuka kembali pada hari sekolah berikutnya.'
+})
+
+/** Sesi yang sedang berlaku menurut jam server (fallback: masuk). */
 const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
-  if (!jendela.value) return 'masuk'
+  const pulangFrom = jendela.value?.pulang_from
+  if (!pulangFrom) return 'masuk'
   const menitSekarang = sekarang.value.getHours() * 60 + sekarang.value.getMinutes()
-  const pulangFrom = keMenit(jendela.value.pulang_from) ?? 15 * 60
-  return menitSekarang >= pulangFrom ? 'pulang' : 'masuk'
+  return menitSekarang >= keMenit(pulangFrom) ? 'pulang' : 'masuk'
 })
 
-/** Absen mandiri sedang dibuka? (hari sekolah, bukan libur, di dalam jendela). */
+/** Absen mandiri sedang dibuka? (hari sekolah + jendela masuk atau pulang). */
 const absenDibuka = computed(() => {
-  const w = jendela.value
-  if (!w) return true
-  if (!w.self_scan_enabled || w.is_holiday || !w.is_school_day) return false
+  if (hariLibur.value) return false
+
+  const cutoff = jendela.value?.self_cutoff
+  const pulangFrom = jendela.value?.pulang_from
+  if (!cutoff || !pulangFrom) return true
 
   const menitSekarang = sekarang.value.getHours() * 60 + sekarang.value.getMinutes()
-  const dalamJendela = (
-    mulai: string | null,
-    selesai: string | null,
-    fallbackSelesai: string | null,
-  ) => {
-    const from = keMenit(mulai)
-    const to = keMenit(selesai ?? fallbackSelesai)
-    return from !== null && to !== null && menitSekarang >= from && menitSekarang <= to
-  }
-
-  return dalamJendela(w.masuk_start ?? '00:00', w.masuk_end, w.self_cutoff)
-    || dalamJendela(w.pulang_from, w.pulang_end, '23:59')
+  return menitSekarang <= keMenit(cutoff) || menitSekarang >= keMenit(pulangFrom)
 })
 
-/** Pesan singkat mengapa absen ditutup (dari server, fallback lokal). */
-const alasanTutup = computed(() => {
-  const w = jendela.value
-  if (!w) return 'Di luar jam absen mandiri.'
-  if (w.is_holiday) return `Hari ini libur${w.holiday_name ? `: ${w.holiday_name}` : ''}.`
-  if (!w.self_scan_enabled) return 'Absensi mandiri sedang dinonaktifkan admin.'
-  if (!w.is_school_day) return 'Tidak ada jadwal absensi untuk hari ini.'
-  return `Absen masuk sampai ${w.masuk_end ?? w.self_cutoff}; absen pulang mulai ${w.pulang_from}.`
+/** Keterangan jam absen (hanya ditampilkan di hari sekolah). */
+const keteranganJam = computed(() => {
+  const cutoff = jendela.value?.self_cutoff
+  const pulangFrom = jendela.value?.pulang_from
+  if (!cutoff || !pulangFrom) return 'Di luar jam absen mandiri.'
+  return `Absen masuk sampai ${cutoff}; absen pulang mulai ${pulangFrom}.`
 })
 
 /** Status absen relevan untuk kartu (sesuai jam saat ini). */
@@ -123,12 +136,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="min-h-dvh bg-white pb-nav">
-    <!-- ══ SATU BLOK: area hijau + kartu status menyatu ══ -->
-    <section
-      class="relative overflow-hidden rounded-b-3xl bg-brand-700 shadow-[0_12px_28px_-16px_rgba(2,6,23,0.45)]"
-    >
-      <!-- ── Isi header hijau ── -->
-      <header class="px-6 pt-[calc(env(safe-area-inset-top)+2.5rem)] text-white">
+    <!-- ══ SATU BLOK: area biru + kartu status menyatu ══ -->
+    <section class="bg-gradient-to-b from-[#006FBE] to-[#004A80]">
+      <!-- ── Isi header ── -->
+      <header class="px-4 pt-[calc(env(safe-area-inset-top)+2.5rem)] text-white">
         <div class="flex items-start justify-between">
           <!-- Logo + nama aplikasi -->
           <div class="flex items-center gap-2.5">
@@ -218,14 +229,17 @@ onBeforeUnmount(() => {
               </span>
               <div>
                 <h2 class="text-base font-bold text-slate-900">
-                  {{ loading ? 'Memuat…' : 'Belum Absen' }}
+                  {{ loading ? 'Memuat…' : hariLibur ? 'Hari Libur' : 'Belum Absen' }}
                 </h2>
                 <p class="mt-0.5 text-sm text-slate-500">
-                  {{
-                    absenDibuka
-                      ? `Absen ${sesiSaatIni === 'pulang' ? 'pulang' : 'masuk'} dibuka.`
-                      : 'Absen ditutup. Hubungi petugas bila perlu.'
-                  }}
+                  <template v-if="hariLibur">{{ pesanLibur }}</template>
+                  <template v-else>
+                    {{
+                      absenDibuka
+                        ? `Absen ${sesiSaatIni === 'pulang' ? 'pulang' : 'masuk'} dibuka.`
+                        : 'Absen ditutup. Hubungi petugas bila perlu.'
+                    }}
+                  </template>
                 </p>
               </div>
             </div>
@@ -240,7 +254,7 @@ onBeforeUnmount(() => {
       <NuxtLink
         v-if="absenDibuka"
         to="/siswa/scan"
-        class="mt-5 flex w-full items-center gap-4 rounded-2xl bg-brand-700 p-4 text-left text-white shadow-xl shadow-brand-700/25 transition active:scale-[0.98] active:bg-brand-800"
+        class="mt-5 flex w-full items-center gap-4 rounded-2xl bg-blue-500 p-4 text-left text-white shadow-xl shadow-blue-600/25 transition active:scale-[0.98] active:bg-blue-500"
       >
         <span class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
           <AppIcon name="scan-face" :size="26" />
@@ -256,7 +270,7 @@ onBeforeUnmount(() => {
         <AppIcon name="chevron-right" :size="22" class="text-white/70" />
       </NuxtLink>
 
-      <!-- Absen ditutup: tombol disabled + info jam berikutnya -->
+      <!-- Absen ditutup: tombol disabled + keterangan -->
       <div
         v-else
         class="mt-5 flex w-full items-center gap-4 rounded-2xl bg-slate-100 p-4 text-left text-slate-400"
@@ -268,10 +282,9 @@ onBeforeUnmount(() => {
         <span class="min-w-0 flex-1">
           <span class="block text-base font-bold text-slate-500">Absen Ditutup</span>
           <span class="mt-0.5 block text-xs text-slate-400">
-            <template v-if="jendela">
-              {{ alasanTutup }}
-            </template>
-            <template v-else>Di luar jam absen mandiri.</template>
+            <!-- Hari libur: info kapan dibuka. Hari sekolah: info jam masuk & pulang. -->
+            <template v-if="hariLibur">{{ pesanLibur }}</template>
+            <template v-else>{{ keteranganJam }}</template>
           </span>
         </span>
       </div>
@@ -291,7 +304,7 @@ onBeforeUnmount(() => {
           <h2 class="section-title">Absensi Terbaru</h2>
           <NuxtLink
             to="/siswa/riwayat"
-            class="text-sm font-semibold text-brand-700 active:text-brand-800"
+            class="text-sm font-semibold text-blue-600 active:text-blue-800"
           >
             Lihat Semua
           </NuxtLink>

@@ -36,7 +36,6 @@
         <!-- Konten form -->
         <slot />
 
-        <!-- Footer: Batal (outline) + Simpan (solid hijau tua) -->
         <footer class="mt-6 flex justify-end gap-4">
           <slot name="footer">
             <base-button variant="outline" @click="close">Batal</base-button>

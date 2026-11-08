@@ -81,11 +81,13 @@ class AttendanceController extends Controller
         }
 
         if ($methodCode = $request->query('method')) {
-            $query->whereHas('method', fn ($q) => $q->where('code', $methodCode));
+            $codes = array_filter(array_map('trim', explode(',', (string) $methodCode)));
+            $query->whereHas('method', fn ($q) => $q->whereIn('code', $codes));
         }
 
         if ($statusCode = $request->query('status')) {
-            $query->whereHas('status', fn ($q) => $q->where('code', $statusCode));
+            $codes = array_filter(array_map('trim', explode(',', (string) $statusCode)));
+            $query->whereHas('status', fn ($q) => $q->whereIn('code', $codes));
         }
 
         if ($search = trim((string) $request->query('search', ''))) {
@@ -224,6 +226,9 @@ class AttendanceController extends Controller
         }
 
         $student = $match['descriptor']->student;
+                // Batas terlambat mengikuti jadwal hari ini, sama dengan absen mandiri siswa.
+        $lateAfter = $this->attendanceWindow->scheduleFor($at)['late_after'] ?? null;
+
         $photoPath = $this->storeScanPhoto($data['photo'] ?? null, $student, $at, $session->code);
         $attendance = $this->persistAttendance(
             $student,
@@ -234,6 +239,9 @@ class AttendanceController extends Controller
             $photoPath,
             isset($data['lat']) ? (float) $data['lat'] : null,
             isset($data['lng']) ? (float) $data['lng'] : null,
+            null,
+            null,
+            $lateAfter,
         );
         $this->discardDuplicatePhoto($attendance, $photoPath);
 

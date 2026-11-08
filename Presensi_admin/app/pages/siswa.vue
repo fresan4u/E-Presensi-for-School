@@ -2,25 +2,68 @@
   <div class="flex flex-col overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
     <!-- Toolbar Atas Tabel -->
     <div
-      class="flex flex-col items-start justify-between gap-4 border-b border-gray-100 px-6 py-5 sm:flex-row sm:items-center"
+      class="flex flex-col gap-4 border-b border-gray-100 px-6 py-5 xl:flex-row xl:items-center xl:justify-between"
     >
-      <!-- Sisi Kiri (Search Bar) -->
-      <div class="w-full sm:w-72 lg:w-80">
-        <base-input
-          v-model="searchQuery"
-          type="search"
-          placeholder="Cari nama, NIS, atau kelas..."
+      <!-- Sisi Kiri (Search Bar + Filter) -->
+      <div class="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:w-auto">
+        <div class="w-full sm:w-72 lg:w-80">
+          <base-input
+            v-model="searchQuery"
+            type="search"
+            placeholder="Cari nama, NIS, atau kelas..."
+          >
+            <template #prefix>
+              <Search
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              />
+            </template>
+          </base-input>
+        </div>
+
+        <!-- Filter jurusan -->
+        <div class="w-full sm:w-56">
+          <select
+            v-model="selectedMajorId"
+            class="input"
+            aria-label="Filter jurusan"
+            data-testid="filter-jurusan"
+          >
+            <option :value="null">Semua Jurusan</option>
+            <option v-for="major in majorOptions" :key="major.id" :value="major.id">
+              {{ major.code }} — {{ major.name }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Filter kelas (menyesuaikan jurusan yang dipilih) -->
+        <div class="w-full sm:w-44">
+          <select
+            v-model="selectedClassroomId"
+            class="input"
+            aria-label="Filter kelas"
+            data-testid="filter-kelas"
+          >
+            <option :value="null">Semua Kelas</option>
+            <option v-for="room in classroomOptions" :key="room.id" :value="room.id">
+              {{ room.name }}
+            </option>
+          </select>
+        </div>
+
+        <button
+          v-if="filterAktif"
+          type="button"
+          class="inline-flex items-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+          data-testid="reset-filter"
+          @click="resetFilter"
         >
-          <template #prefix>
-            <Search
-              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-            />
-          </template>
-        </base-input>
+          <X class="h-3.5 w-3.5" />
+          Reset
+        </button>
       </div>
 
       <!-- Sisi Kanan (Tombol Aksi) -->
-      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+      <div class="flex w-full flex-wrap items-center gap-3 xl:w-auto">
         <input
           ref="fileInput"
           type="file"
@@ -135,7 +178,7 @@
                 </button>
                 <nuxt-link
                   :to="{ path: '/registrasi-wajah', query: { student: siswa.id } }"
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-emerald-900 text-white transition-colors hover:bg-emerald-800"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-blue-900 text-white transition-colors hover:bg-blue-800"
                   :aria-label="`Daftarkan wajah ${siswa.full_name}`"
                   title="Daftarkan wajah"
                 >
@@ -157,7 +200,7 @@
           <!-- Empty state -->
           <tr v-if="!loading && !students.length">
             <td colspan="7" class="px-6 py-10 text-center text-sm text-gray-500">
-              Tidak ada data yang cocok dengan pencarianmu.
+              Tidak ada data yang cocok dengan pencarian atau filter.
             </td>
           </tr>
         </tbody>
@@ -182,86 +225,131 @@
       :loading="savingStudent"
       @confirm="submitStudent"
     >
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <label class="flex flex-col gap-1.5">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <UserRound class="h-4 w-4 text-emerald-700" />
-            Nama Lengkap
-          </span>
-          <input v-model="form.full_name" type="text" class="input" placeholder="Nama siswa" />
-        </label>
-        <label class="flex flex-col gap-1.5">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <Hash class="h-4 w-4 text-emerald-700" />
-            NIS
-          </span>
-          <input v-model="form.nis" type="text" class="input" placeholder="Nomor induk siswa" />
-        </label>
-        <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <School class="h-4 w-4 text-emerald-700" />
-            Kelas
-          </span>
-          <select v-model="form.classroom_id" class="input">
-            <option :value="null">Belum ditentukan</option>
-            <option v-for="room in classrooms" :key="room.id" :value="room.id">
-              {{ room.name }}
-            </option>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <CalendarRange class="h-4 w-4 text-emerald-700" />
-            Tahun Ajaran
-          </span>
-          <select v-model="form.academic_year_id" class="input" :disabled="loadingAcademicYears">
-            <option :value="null">Belum ditentukan</option>
-            <option v-for="year in academicYears" :key="year.id" :value="year.id">
-              {{ year.label }}{{ year.is_active ? ' (Aktif)' : '' }}
-            </option>
-          </select>
-          <span v-if="loadingAcademicYears" class="text-xs text-slate-400">Memuat tahun ajaran...</span>
-        </label>
+      <div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label class="flex flex-col gap-1.5">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <UserRound class="h-4 w-4 text-blue-700" />
+              Nama Lengkap
+            </span>
+            <!-- Otomatis huruf kapital saat diketik -->
+            <input
+              :value="form.full_name"
+              type="text"
+              class="input uppercase"
+              placeholder="Nama siswa"
+              autocomplete="off"
+              @input="onUpperInput($event, 'full_name')"
+            />
+          </label>
 
-        <!-- Nomor wali murid: dipakai WaNotifier untuk kirim notifikasi absensi -->
-        <label class="flex flex-col gap-1.5">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <UsersRound class="h-4 w-4 text-emerald-700" />
-            Nama Wali
-          </span>
-          <input
-            v-model="form.guardian_name"
-            type="text"
-            class="input"
-            placeholder="Nama orang tua / wali"
-          />
-        </label>
-        <label class="flex flex-col gap-1.5">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <HeartHandshake class="h-4 w-4 text-emerald-700" />
-            Hubungan
-          </span>
-          <select v-model="form.guardian_relationship" class="input">
-            <option value="ayah">Ayah</option>
-            <option value="ibu">Ibu</option>
-            <option value="wali">Wali</option>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1.5 sm:col-span-2">
-          <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
-            <Phone class="h-4 w-4 text-emerald-700" />
-            Nomor WhatsApp Wali
-          </span>
-          <input
-            v-model="form.guardian_phone"
-            type="tel"
-            class="input"
-            placeholder="08xxxxxxxxxx"
-          />
-          <span class="text-xs text-slate-400">
-            Kosongkan bila belum ada. Nomor ini menerima notifikasi absensi (teks + foto).
-          </span>
-        </label>
+          <label class="flex flex-col gap-1.5">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <Hash class="h-4 w-4 text-blue-700" />
+              NIS
+            </span>
+            <!-- Hanya angka, maksimal 4 digit; bukan type=number agar tanpa panah & tetap menyimpan angka 0 di depan -->
+            <input
+              :value="form.nis"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              :maxlength="NIS_MAKS"
+              autocomplete="off"
+              class="input font-mono"
+              :class="nisError ? 'input-error' : ''"
+              placeholder="Maks. 4 angka"
+              data-testid="input-nis"
+              @input="onNisInput"
+            />
+            <span v-if="nisError" class="text-xs font-medium text-red-600" role="alert">
+              {{ nisError }}
+            </span>
+            <span v-else-if="nisChecking" class="text-xs text-slate-400">Memeriksa NIS...</span>
+            <span v-else class="text-xs text-slate-400">
+              Hanya angka, maksimal 4 digit, tidak boleh sama dengan NIS lain.
+            </span>
+          </label>
+
+          <label class="flex flex-col gap-1.5 sm:col-span-2">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <School class="h-4 w-4 text-blue-700" />
+              Kelas
+            </span>
+            <select v-model="form.classroom_id" class="input">
+              <option :value="null">Belum ditentukan</option>
+              <option v-for="room in classrooms" :key="room.id" :value="room.id">
+                {{ room.name }}
+              </option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1.5 sm:col-span-2">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <CalendarRange class="h-4 w-4 text-blue-700" />
+              Tahun Ajaran
+            </span>
+            <select v-model="form.academic_year_id" class="input" :disabled="loadingAcademicYears">
+              <option :value="null">Belum ditentukan</option>
+              <option v-for="year in academicYears" :key="year.id" :value="year.id">
+                {{ year.label }}{{ year.is_active ? ' (Aktif)' : '' }}
+              </option>
+            </select>
+            <span v-if="loadingAcademicYears" class="text-xs text-slate-400">Memuat tahun ajaran...</span>
+          </label>
+
+          <!-- Nomor wali murid: dipakai WaNotifier untuk kirim notifikasi absensi -->
+          <label class="flex flex-col gap-1.5">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <UsersRound class="h-4 w-4 text-blue-700" />
+              Nama Wali
+            </span>
+            <!-- Otomatis huruf kapital saat diketik -->
+            <input
+              :value="form.guardian_name"
+              type="text"
+              class="input uppercase"
+              placeholder="Nama orang tua / wali"
+              autocomplete="off"
+              @input="onUpperInput($event, 'guardian_name')"
+            />
+          </label>
+          <label class="flex flex-col gap-1.5">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <HeartHandshake class="h-4 w-4 text-blue-700" />
+              Hubungan
+            </span>
+            <select v-model="form.guardian_relationship" class="input">
+              <option value="ayah">Ayah</option>
+              <option value="ibu">Ibu</option>
+              <option value="wali">Wali</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1.5 sm:col-span-2">
+            <span class="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <Phone class="h-4 w-4 text-blue-700" />
+              Nomor WhatsApp Wali
+            </span>
+            <input
+              v-model="form.guardian_phone"
+              type="tel"
+              class="input"
+              placeholder="08xxxxxxxxxx"
+            />
+            <span class="text-xs text-slate-400">
+              Kosongkan bila belum ada. Nomor ini menerima notifikasi absensi (teks + foto).
+            </span>
+          </label>
+        </div>
+
+        <!-- Pesan error di dalam modal (supaya tidak tersembunyi di belakang layar gelap) -->
+        <p
+          v-if="formError"
+          class="mt-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          role="alert"
+        >
+          <TriangleAlert class="h-4 w-4 shrink-0" />
+          {{ formError }}
+        </p>
       </div>
     </modal>
 
@@ -309,6 +397,7 @@ import {
   UserPlus,
   UserRound,
   UsersRound,
+  X,
 } from '@lucide/vue'
 import type { ApiAcademicYear, ApiClassroom, ApiStudent } from '#layers/shared/app/composables/useApi'
 
@@ -344,21 +433,86 @@ const showNotice = (type: 'success' | 'error', text: string) => {
   notice.value = { type, text }
 }
 
+/* ---------- Filter jurusan & kelas ---------- */
+const selectedMajorId = ref<number | null>(null)
+const selectedClassroomId = ref<number | null>(null)
+
+/** Daftar jurusan diambil dari data kelas. */
+const majorOptions = computed(() => {
+  const map = new Map<number, { id: number; code: string; name: string }>()
+  for (const room of classrooms.value) {
+    if (room.major) map.set(room.major.id, room.major)
+  }
+  return [...map.values()].sort((a, b) => a.code.localeCompare(b.code))
+})
+
+/** Pilihan kelas menyesuaikan jurusan yang dipilih (semua kelas bila jurusan belum dipilih). */
+const classroomOptions = computed(() =>
+  selectedMajorId.value === null
+    ? classrooms.value
+    : classrooms.value.filter((room) => room.major?.id === selectedMajorId.value),
+)
+
+const filterAktif = computed(
+  () => selectedMajorId.value !== null || selectedClassroomId.value !== null,
+)
+
+const resetFilter = () => {
+  selectedMajorId.value = null
+  selectedClassroomId.value = null
+}
+
+/** Jumlah data yang diminta per kelas saat memfilter jurusan tanpa kelas. */
+const PER_KELAS = 100
+
+/** Penanda permintaan terbaru; hasil permintaan lama diabaikan. */
+let loadId = 0
+
 const loadStudents = async () => {
+  const requestId = ++loadId
   loading.value = true
+
   try {
-    const res = await api.students({
-      search: searchQuery.value.trim() || undefined,
-      page: currentPage.value,
-      per_page: perPage,
-    })
-    students.value = res.data
-    totalData.value = res.meta.total
-    totalPages.value = res.meta.last_page
+    const search = searchQuery.value.trim() || undefined
+
+    // Tanpa filter, atau kelas dipilih: satu permintaan, paginasi dari server.
+    if (selectedClassroomId.value !== null || selectedMajorId.value === null) {
+      const res = await api.students({
+        search,
+        classroom_id: selectedClassroomId.value ?? undefined,
+        page: currentPage.value,
+        per_page: perPage,
+      })
+      if (requestId !== loadId) return
+
+      students.value = res.data
+      totalData.value = res.meta.total
+      totalPages.value = res.meta.last_page
+      return
+    }
+
+    // Jurusan dipilih tanpa kelas: backend belum punya filter jurusan, jadi
+    // siswa tiap kelas jurusan itu dimuat lalu digabung dan dipaginasi di sini.
+    const results = await Promise.all(
+      classroomOptions.value.map((room) =>
+        api.students({ search, classroom_id: room.id, page: 1, per_page: PER_KELAS }),
+      ),
+    )
+    if (requestId !== loadId) return
+
+    const merged = results
+      .flatMap((res) => res.data)
+      .sort((a, b) => a.full_name.localeCompare(b.full_name, 'id'))
+
+    totalData.value = merged.length
+    totalPages.value = Math.max(1, Math.ceil(merged.length / perPage))
+
+    const awal = (currentPage.value - 1) * perPage
+    students.value = merged.slice(awal, awal + perPage)
   } catch (error) {
-    showNotice('error', apiErrorMessage(error))
+    if (requestId === loadId) showNotice('error', apiErrorMessage(error))
   } finally {
-    loading.value = false
+    if (requestId === loadId) loading.value = false
   }
 }
 
@@ -367,7 +521,7 @@ const loadClassrooms = async () => {
     const res = await api.classrooms()
     classrooms.value = res.data
   } catch {
-    // Daftar kelas opsional untuk form; abaikan bila gagal.
+    // Daftar kelas opsional untuk form & filter; abaikan bila gagal.
   }
 }
 
@@ -392,6 +546,23 @@ watch(searchQuery, () => {
 })
 
 watch(currentPage, loadStudents)
+
+// Ganti jurusan: kelas yang tidak termasuk jurusan itu dilepas.
+watch(selectedMajorId, () => {
+  const kelasDipilih = selectedClassroomId.value
+  if (kelasDipilih !== null && !classroomOptions.value.some((room) => room.id === kelasDipilih)) {
+    selectedClassroomId.value = null
+  }
+})
+
+// Filter berubah: kembali ke halaman 1, lalu muat ulang.
+watch([selectedMajorId, selectedClassroomId], () => {
+  if (currentPage.value !== 1) {
+    currentPage.value = 1 // watch(currentPage) yang memuat ulang
+  } else {
+    loadStudents()
+  }
+})
 
 /* ---------- Import CSV ---------- */
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -432,6 +603,72 @@ const form = reactive({
   guardian_phone: '',
 })
 
+/** NIS: hanya angka, 1–4 digit. Disimpan sebagai teks supaya angka 0 di depan (mis. 0999) tidak hilang. */
+const NIS_MAKS = 4
+const NIS_FORMAT = /^\d{1,4}$/
+
+const nisError = ref('')
+const nisChecking = ref(false)
+const formError = ref('')
+
+let nisTimer: ReturnType<typeof setTimeout> | null = null
+/** Penanda pemeriksaan terbaru; hasil pemeriksaan lama diabaikan. */
+let nisCheckId = 0
+
+const nisSudahTerdaftar = (nis: string) => `NIS ${nis} sudah terdaftar. Gunakan NIS lain.`
+
+/** Rapikan nama: spasi ganda dihapus, semua huruf kapital. */
+const normalisasiNama = (value: string) => value.replace(/\s+/g, ' ').trim().toUpperCase()
+
+/** Ubah isi kolom nama jadi huruf kapital saat diketik, kursor tetap di tempatnya. */
+const onUpperInput = (event: Event, field: 'full_name' | 'guardian_name') => {
+  const el = event.target as HTMLInputElement
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  const upper = el.value.toUpperCase()
+
+  el.value = upper
+  if (start !== null && end !== null) el.setSelectionRange(start, end)
+  form[field] = upper
+}
+
+/** Cek ke server apakah NIS sudah dipakai. Mengembalikan true bila NIS masih bebas. */
+const checkNis = async (nis: string): Promise<boolean> => {
+  const checkId = ++nisCheckId
+  nisChecking.value = true
+
+  try {
+    const res = await api.students({ search: nis, per_page: 20 })
+    if (checkId !== nisCheckId) return true // sudah ada pemeriksaan yang lebih baru
+
+    const sudahAda = res.data.some((student) => student.nis === nis)
+    nisError.value = sudahAda ? nisSudahTerdaftar(nis) : ''
+    return !sudahAda
+  } catch {
+    // Pemeriksaan cepat gagal: validasi server saat Simpan tetap jadi penentu akhir.
+    return true
+  } finally {
+    if (checkId === nisCheckId) nisChecking.value = false
+  }
+}
+
+const onNisInput = (event: Event) => {
+  const el = event.target as HTMLInputElement
+  const digits = el.value.replace(/\D/g, '').slice(0, NIS_MAKS)
+
+  // Isi kolom ditulis ulang langsung supaya huruf/simbol tidak sempat tampil.
+  el.value = digits
+  form.nis = digits
+
+  if (nisTimer) clearTimeout(nisTimer)
+  nisCheckId++ // batalkan pemeriksaan yang sedang berjalan
+  nisChecking.value = false
+  nisError.value = ''
+
+  if (!digits) return
+  nisTimer = setTimeout(() => checkNis(digits), 400)
+}
+
 const openCreate = () => {
   Object.assign(form, {
     nis: '',
@@ -442,17 +679,44 @@ const openCreate = () => {
     guardian_relationship: 'ayah',
     guardian_phone: '',
   })
+
+  if (nisTimer) clearTimeout(nisTimer)
+  nisCheckId++
+  nisChecking.value = false
+  nisError.value = ''
+  formError.value = ''
   isFormOpen.value = true
 }
 
 const submitStudent = async () => {
+  formError.value = ''
+
+  const nis = form.nis.trim()
+  const fullName = normalisasiNama(form.full_name)
+
+  if (!fullName) {
+    formError.value = 'Nama lengkap wajib diisi.'
+    return
+  }
+
+  if (!NIS_FORMAT.test(nis)) {
+    nisError.value = 'NIS harus berupa angka, maksimal 4 digit.'
+    return
+  }
+
   savingStudent.value = true
   try {
+    if (nisTimer) clearTimeout(nisTimer)
+
+    // Pemeriksaan terakhir sebelum menyimpan.
+    if (!(await checkNis(nis))) return
+
     const phone = form.guardian_phone.trim()
+    const guardianName = normalisasiNama(form.guardian_name)
 
     await api.createStudent({
-      nis: form.nis.trim(),
-      full_name: form.full_name.trim(),
+      nis,
+      full_name: fullName,
       classroom_id: form.classroom_id,
       academic_year_id: form.academic_year_id,
       // Wali hanya dikirim bila nomornya diisi.
@@ -460,7 +724,7 @@ const submitStudent = async () => {
         ? {
             guardians: [
               {
-                name: form.guardian_name.trim() || null,
+                name: guardianName || null,
                 relationship: form.guardian_relationship,
                 phone,
                 is_primary: true,
@@ -474,7 +738,15 @@ const submitStudent = async () => {
     currentPage.value = 1
     await loadStudents()
   } catch (error) {
-    showNotice('error', apiErrorMessage(error))
+    // Server menolak NIS (mis. ganda): tampilkan di bawah kolom NIS dalam bahasa Indonesia.
+    const nisErrors = (error as { data?: { errors?: Record<string, string[]> } })?.data?.errors?.nis
+    if (nisErrors?.length) {
+      const pesan = nisErrors[0] ?? ''
+      nisError.value = /taken|sudah|unique|duplicate/i.test(pesan) ? nisSudahTerdaftar(nis) : pesan
+      return
+    }
+
+    formError.value = apiErrorMessage(error)
   } finally {
     savingStudent.value = false
   }
@@ -532,6 +804,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
+  if (nisTimer) clearTimeout(nisTimer)
 })
 </script>
 
@@ -548,5 +821,10 @@ onUnmounted(() => {
 .input:focus {
   outline: none;
   border-color: #064e3b;
+}
+/* Kolom bermasalah (mis. NIS ganda): garis merah */
+.input.input-error,
+.input.input-error:focus {
+  border-color: #dc2626;
 }
 </style>

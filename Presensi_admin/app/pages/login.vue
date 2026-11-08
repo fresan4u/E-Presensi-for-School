@@ -5,8 +5,8 @@
       <div class="w-full max-w-md">
         <!-- Logo & Nama Aplikasi -->
         <div class="mb-10 flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-900">
-            <ShieldCheck class="h-5 w-5 text-white" />
+          <div :class="LOGO_TILE">
+            <ShieldCheck class="h-5 w-5 text-[#17324D] drop-shadow" />
           </div>
           <div class="flex flex-col">
             <span class="text-base font-bold leading-tight text-slate-800">Presensi</span>
@@ -68,7 +68,12 @@
           </p>
 
           <!-- Tombol Login -->
-          <base-button type="submit" variant="solid" class="mt-2 w-full" :loading="isLoading">
+          <base-button
+            type="submit"
+            variant="solid"
+            :class="['mt-2 w-full', GOLD_BUTTON]"
+            :loading="isLoading"
+          >
             {{ isLoading ? 'Memproses...' : 'Masuk' }}
           </base-button>
         </form>
@@ -76,15 +81,15 @@
     </section>
 
     <!-- Kolom Kanan: Visual Area -->
-    <section class="relative hidden bg-emerald-950 md:block">
+    <section class="relative hidden bg-[#17324D] md:block">
       <!-- Placeholder gambar gedung -->
       <img
         src="/images/school-building.svg"
         alt="Ilustrasi gedung sekolah"
         class="absolute inset-0 h-full w-full object-cover"
       />
-      <!-- Overlay gelap tipis -->
-      <div class="absolute inset-0 bg-black/40" />
+      <!-- Lapisan navy di atas gambar -->
+      <div class="absolute inset-0 bg-gradient-to-b from-[#17324D]/60 to-[#0F2236]/90" />
 
       <!-- Headline di atas gambar -->
       <div class="relative z-10 flex h-full flex-col justify-end px-10 pb-12 lg:px-14 lg:pb-16">
@@ -97,7 +102,7 @@
         </p>
         <!-- Indikator -->
         <div class="mt-8 flex items-center gap-2">
-          <span class="h-1.5 w-6 rounded-full bg-white"></span>
+          <span class="h-1.5 w-6 rounded-full bg-[#D4A017]"></span>
           <span class="h-1.5 w-3 rounded-full bg-white/40"></span>
           <span class="h-1.5 w-3 rounded-full bg-white/40"></span>
           <span class="h-1.5 w-3 rounded-full bg-white/40"></span>
@@ -114,6 +119,18 @@ import { apiErrorMessage } from '#layers/shared/app/composables/useApi'
 definePageMeta({
   layout: 'auth',
 })
+
+/* ------------------------------------------------------------------ */
+/* Gaya (tema admin: navy + emas)                                      */
+/* ------------------------------------------------------------------ */
+
+const GOLD_GRADIENT = 'bg-gradient-to-b from-[#E8B923] to-[#B8860B]'
+
+// Kotak logo: gradient emas + bayangan berwarna + ring tipis
+const LOGO_TILE = `flex h-10 w-10 items-center justify-center rounded-lg shadow-md shadow-[#D4A017]/40 ring-1 ring-white/20 ${GOLD_GRADIENT}`
+
+// Tombol Masuk: gradient emas, teks navy supaya terbaca
+const GOLD_BUTTON = `border-transparent ${GOLD_GRADIENT} text-[#17324D] font-semibold shadow-md shadow-[#D4A017]/30 hover:brightness-110`
 
 const { login } = useAuth()
 

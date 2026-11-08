@@ -4,8 +4,8 @@
     <section class="flex items-center justify-center bg-white px-6 py-10 sm:px-12">
       <div class="w-full max-w-md">
         <div class="mb-10 flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-900">
-            <ShieldCheck class="h-5 w-5 text-white" />
+          <div :class="LOGO_TILE">
+            <ShieldCheck class="h-5 w-5 text-white drop-shadow" />
           </div>
           <div class="flex flex-col">
             <span class="text-base font-bold leading-tight text-slate-800">Presensi</span>
@@ -33,7 +33,7 @@
           <base-input
             v-model="form.password"
             label="Password"
-            :type="showPassword ? 'text' : 'password'"
+            :type="showPassword ? 'text' : '  '"
             placeholder="Masukkan password"
             autocomplete="current-password"
             required
@@ -67,13 +67,13 @@
     </section>
 
     <!-- Kolom Kanan: Visual -->
-    <section class="relative hidden bg-emerald-950 md:block">
+    <section class="relative hidden md:block" :class="BLUE_GRADIENT">
       <img
         src="/images/school-building.svg"
         alt="Ilustrasi gedung sekolah"
         class="absolute inset-0 h-full w-full object-cover"
       />
-      <div class="absolute inset-0 bg-black/40" />
+      <div class="absolute inset-0 bg-gradient-to-b from-[#006FBE]/50 to-[#004A80]/80" />
       <div class="relative z-10 flex h-full flex-col justify-end px-10 pb-12 lg:px-14 lg:pb-16">
         <h2 class="max-w-md text-3xl font-semibold leading-tight tracking-tight text-white lg:text-4xl">
           Operasional Absensi dalam Satu Panel
@@ -95,12 +95,29 @@ definePageMeta({
   layout: 'auth',
 })
 
+/* ------------------------------------------------------------------ */
+/* Gaya                                                                */
+/* ------------------------------------------------------------------ */
+
+const BLUE_GRADIENT = 'bg-gradient-to-b from-[#006FBE] to-[#004A80]'
+
+// Kotak logo: gradient biru + bayangan berwarna + ring tipis
+const LOGO_TILE = `flex h-10 w-10 items-center justify-center rounded-lg shadow-md shadow-[#006FBE]/40 ring-1 ring-white/20 ${BLUE_GRADIENT}`
+
+/* ------------------------------------------------------------------ */
+/* State                                                               */
+/* ------------------------------------------------------------------ */
+
 const { login, logout } = useAuth()
 
 const form = reactive({ email: '', password: '' })
 const showPassword = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
+
+/* ------------------------------------------------------------------ */
+/* Aksi                                                                */
+/* ------------------------------------------------------------------ */
 
 const handleLogin = async () => {
   if (isLoading.value) return

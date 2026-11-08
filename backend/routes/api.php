@@ -31,9 +31,9 @@ Route::get('/user', function (Request $request) {
 |--------------------------------------------------------------------------
 | API v1
 |--------------------------------------------------------------------------
-| Semua endpoint operasional (admin & petugas) memakai token Sanctum. Satu-
-| satunya endpoint publik selain login adalah `POST /attendance/scan` (kiosk
-| absensi tanpa login). Portal siswa memakai NIS + PIN lewat grup terpisah.
+| Semua endpoint operasional (admin & petugas) memakai token Sanctum. Hanya
+| login dan titik lokasi sekolah yang publik. Portal siswa memakai NIS + PIN
+| lewat grup terpisah.
 */
 Route::prefix('v1')->group(function () {
     /*
@@ -45,12 +45,6 @@ Route::prefix('v1')->group(function () {
      * Portal siswa (app mobile): login NIS + PIN.
      */
     Route::post('/student/login', [StudentAuthController::class, 'login'])->middleware('throttle:10,1');
-
-    /*
-     * Kiosk absensi publik (`/scan` di app petugas): cocokkan wajah & catat
-     * absensi tanpa login. Dibatasi throttle agar tidak disalahgunakan.
-     */
-    Route::post('/attendance/scan', [AttendanceController::class, 'scan'])->middleware('throttle:30,1');
 
     /*
      * Lokasi sekolah publik: app siswa mengambil titik & radius terbaru saat
@@ -70,18 +64,19 @@ Route::prefix('v1')->group(function () {
      * Operasional admin & petugas (butuh login sebagai User, bukan siswa).
      */
     Route::middleware(['auth:sanctum', EnsurePanelUser::class])->group(function () {
+        // Kiosk absensi (`/scan` di app petugas): perangkat kiosk harus login
+        // sebagai petugas/admin. Sebelumnya endpoint ini publik tanpa login.
+        Route::post('/attendance/scan', [AttendanceController::class, 'scan'])->middleware('throttle:30,1');
+
         // Referensi / master data
         Route::get('/meta', [ReferenceController::class, 'meta']);
         Route::get('/classrooms', [ReferenceController::class, 'classrooms']);
         Route::get('/majors', [ReferenceController::class, 'majors']);
         Route::get('/academic-years', [ReferenceController::class, 'academicYears']);
 
-        // Siswa
-        Route::post('/students/import', [StudentController::class, 'import']);
-        Route::apiResource('students', StudentController::class);
-
-        // Petugas (kelola akun petugas dari panel admin)
-        Route::apiResource('officers', OfficerController::class);
+        // Siswa: panel operasional hanya boleh membaca. Tambah/ubah/hapus
+        // ada di grup khusus admin di bawah.
+        Route::apiResource('students', StudentController::class)->only(['index', 'show']);
 
         // Descriptor wajah (registrasi)
         Route::get('/students/{student}/face-descriptors', [FaceDescriptorController::class, 'index']);
@@ -96,13 +91,17 @@ Route::prefix('v1')->group(function () {
     });
 
     /*
-     * Pengaturan global — HANYA admin. Petugas tetap memakai endpoint
-     * operasional di atas, tetapi tidak boleh mengubah konfigurasi sekolah.
+     * Pengelolaan data & pengaturan global — HANYA admin. Petugas tetap memakai
+     * endpoint operasional di atas, tetapi tidak boleh mengubah data master,
+     * akun petugas, maupun konfigurasi sekolah.
      */
     Route::middleware(['auth:sanctum', EnsurePanelUser::class, EnsureAdmin::class])->group(function () {
         Route::get('/settings', [SettingsController::class, 'show']);
         Route::put('/settings', [SettingsController::class, 'update']);
         Route::get('/settings/audit', [SettingsController::class, 'audit']);
+
+        // Akun petugas (kelola dari panel admin).
+        Route::apiResource('officers', OfficerController::class);
 
         // Tahun ajaran: baca boleh petugas, tulis hanya admin.
         Route::post('/academic-years', [AcademicYearController::class, 'store']);
@@ -110,8 +109,10 @@ Route::prefix('v1')->group(function () {
         Route::patch('/academic-years/{academicYear}/activate', [AcademicYearController::class, 'activate']);
         Route::delete('/academic-years/{academicYear}', [AcademicYearController::class, 'destroy']);
 
-        // Aksi massal siswa per tahun ajaran (nonaktif/aktif/hapus).
+        // Siswa: tambah, ubah, hapus, import, dan aksi massal per tahun ajaran.
+        Route::post('/students/import', [StudentController::class, 'import']);
         Route::post('/students/bulk-action', [StudentController::class, 'bulkAction']);
+        Route::apiResource('students', StudentController::class)->except(['index', 'show']);
 
         Route::get('/attendance-schedules', [AttendanceScheduleController::class, 'index']);
         Route::put('/attendance-schedules', [AttendanceScheduleController::class, 'update']);

@@ -12,7 +12,7 @@
         :placeholder="placeholder"
         :autocomplete="autocomplete"
         :required="required"
-        class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-gray-400 transition-colors focus:border-emerald-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
+        class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-gray-400 transition-colors focus:border-blue-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
         :class="[hasPrefix ? 'pl-9' : '', hasSuffix ? 'pr-10' : '', customClass]"
         @input="onInput"
       />

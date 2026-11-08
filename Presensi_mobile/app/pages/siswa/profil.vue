@@ -48,7 +48,7 @@ async function onKeluar() {
   <div class="min-h-dvh bg-slate-50 pb-nav">
     <!-- ── Header hijau: avatar + identitas ── -->
     <section
-      class="relative overflow-hidden rounded-b-3xl bg-brand-700 shadow-[0_12px_28px_-16px_rgba(2,6,23,0.45)]"
+      class="relative overflow-hidden rounded-b-3xl bg-gradient-to-b from-[#006FBE] to-[#004A80]"
     >
       <header class="px-6 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-8 text-white">
         <h1 class="text-sm font-semibold tracking-wide text-white/80 uppercase">Profil</h1>

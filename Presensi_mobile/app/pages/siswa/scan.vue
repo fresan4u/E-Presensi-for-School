@@ -1,9 +1,11 @@
 <script setup lang="ts">
 useHead({ title: 'Scan Wajah · Absensi Digital' })
+import type { ApiAttendanceWindow } from '#layers/shared/app/composables/useApi'
 
 const router = useRouter()
 const api = useApi()
 const { fetchMe } = useStudentAuth()
+const config = useRuntimeConfig()
 
 const {
   videoRef,
@@ -18,31 +20,30 @@ const {
 const submitting = ref(false)
 const notice = ref('')
 const showHelp = ref(false)
-/** Absen mandiri ditolak server (libur, hari nonaktif, atau di luar jendela). */
+/** Absen mandiri ditolak server (di luar jendela jam). */
 const closed = ref(false)
-/** Ringkasan jendela absensi dari server (jadwal per hari + libur). */
+/** Batas jam dari server, untuk label sesi & pesan. */
 const jendela = ref<ApiAttendanceWindow | null>(null)
-
-/** Fallback koordinat bila endpoint lokasi gagal dihubungi. */
-const schoolLat = ref(-6.18841)
-const schoolLng = ref(106.924823)
-const radiusMeter = ref(100)
+/** Titik & radius area sekolah; diambil dari backend saat halaman dibuka. */
+const schoolLat = ref(Number(config.public.schoolLat))
+const schoolLng = ref(Number(config.public.schoolLng))
+const radiusMeter = ref(Number(config.public.schoolRadius) || 100)
 
 /**
- * Saklar geofencing mengikuti pengaturan admin di server, bukan env build.
- * Klien tetap menghitung jarak untuk umpan balik cepat; keputusan akhir
- * (termasuk akurasi & radius) tetap di backend.
+ * Saklar geofencing. Saat ini dimatikan (default `false`): absensi tidak lagi
+ * diblokir oleh lokasi. Nyalakan lewat env NUXT_PUBLIC_GEOFENCE_ENABLED=true.
  */
-const geofenceAktif = ref(false)
+const geofenceAktif = computed(() => String(config.public.geofenceEnabled) === 'true')
 
-/** State geofencing */
-const lokasi = ref<{ lat: number | null; lng: number | null; accuracy: number | null }>({
-  lat: null,
-  lng: null,
-  accuracy: null,
-})
+/**
+ * State geofencing. Saat geofence mati, status langsung `valid` sejak awal
+ * supaya elemen <video> sudah ada di halaman ketika kamera dinyalakan.
+ */
+const lokasi = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
 const jarak = ref<number>(0)
-const statusLokasi = ref<'loading' | 'valid' | 'invalid' | 'error'>('loading')
+const statusLokasi = ref<'loading' | 'valid' | 'invalid' | 'error'>(
+  geofenceAktif.value ? 'loading' : 'valid',
+)
 const errorMessageLokasi = ref('')
 
 let geoWatchId: number | null = null
@@ -64,7 +65,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
 function prosesLokasi(position: GeolocationPosition) {
   const lat = position.coords.latitude
   const lng = position.coords.longitude
-  lokasi.value = { lat, lng, accuracy: position.coords.accuracy }
+  lokasi.value = { lat, lng }
 
   const jarakHitung = getDistance(lat, lng, schoolLat.value, schoolLng.value)
   jarak.value = Math.round(jarakHitung)
@@ -88,16 +89,22 @@ const lastScan = useState<ScanResult | null>('last-scan', () => null)
 
 /** Sesi ditentukan server dari jam; label ini hanya untuk tampilan. */
 const sesiSaatIni = computed<'masuk' | 'pulang'>(() => {
-  if (!jendela.value) return 'masuk'
+  const pulangFrom = jendela.value?.pulang_from
+  if (!pulangFrom) return 'masuk'
+
   const now = new Date()
   const menitSekarang = now.getHours() * 60 + now.getMinutes()
-  const menit = (jam: string | null) => {
-    if (!jam) return null
+  const menit = (jam: string) => {
     const [h, m] = jam.split(':').map(Number)
     return (h ?? 0) * 60 + (m || 0)
   }
-  return menitSekarang >= (menit(jendela.value.pulang_from) ?? 15 * 60) ? 'pulang' : 'masuk'
+  return menitSekarang >= menit(pulangFrom) ? 'pulang' : 'masuk'
 })
+
+/** Jam batas yang ditampilkan di info sesi (kosong bila server tidak mengirim). */
+const jamBatas = computed(() =>
+  sesiSaatIni.value === 'pulang' ? jendela.value?.pulang_from : jendela.value?.self_cutoff,
+)
 
 const labelSesi = computed(() => (sesiSaatIni.value === 'pulang' ? 'Absen Pulang' : 'Absen Masuk'))
 
@@ -110,37 +117,40 @@ function goBack() {
   else router.push('/siswa')
 }
 
+/**
+ * Nyalakan kamera setelah halaman selesai dirender, supaya elemen <video>
+ * sudah ada. Aman dipanggil berulang (init di composable menolak panggilan
+ * ganda yang bersamaan).
+ */
+async function siapkanKamera() {
+  if (statusLokasi.value !== 'valid') return
+  await nextTick()
+  await initFace()
+}
+
 onMounted(async () => {
   fetchMe().catch(() => {})
 
-  // Batas jam & status hari dari server (sumber kebenaran) untuk label & pesan.
+  // Batas jam absen dari server (sumber kebenaran) untuk label & pesan.
   try {
     const meta = await api.studentMeta()
     jendela.value = meta.data.attendance_window
-
-    if (!jendela.value.is_open) {
-      closed.value = true
-      notice.value = jendela.value.message
-        || 'Absensi mandiri sedang ditutup. Hubungi petugas bila perlu.'
-    }
   } catch {
     // Abaikan: tombol tetap bisa dicoba, validasi akhir tetap di server.
   }
 
-  // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
-  // area absensi tanpa deploy ulang.
-  try {
-    const lokasiSekolah = await api.schoolLocation()
-    schoolLat.value = lokasiSekolah.data.latitude
-    schoolLng.value = lokasiSekolah.data.longitude
-    radiusMeter.value = lokasiSekolah.data.radius_meter
-    geofenceAktif.value = lokasiSekolah.data.geofence_enabled
-      && lokasiSekolah.data.configured
-  } catch {
-    // Abaikan: fallback config tetap dipakai.
-  }
-
   if (geofenceAktif.value) {
+    // Titik & radius sekolah diambil dari server supaya admin bisa memindahkan
+    // area absensi tanpa deploy ulang. Gagal fetch = pakai nilai env/config.
+    try {
+      const lokasiSekolah = await api.schoolLocation()
+      schoolLat.value = lokasiSekolah.data.latitude
+      schoolLng.value = lokasiSekolah.data.longitude
+      radiusMeter.value = lokasiSekolah.data.radius_meter
+    } catch {
+      // Abaikan: fallback config tetap dipakai.
+    }
+
     // Geofencing: pantau lokasi siswa secara real-time.
     statusLokasi.value = 'loading'
     if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
@@ -153,13 +163,20 @@ onMounted(async () => {
       prosesError()
     }
   } else {
-    // Geofence nonaktif: tidak minta izin GPS dan tidak memblokir absensi.
-    // Koordinat tetap dikirim bila tersedia sebagai jejak.
+    // Fitur lokasi dimatikan sementara: tidak minta izin GPS dan tidak
+    // memblokir absensi. Koordinat tetap dikirim bila nanti diaktifkan lagi.
     statusLokasi.value = 'valid'
     errorMessageLokasi.value = ''
   }
 
-  await initFace()
+  await siapkanKamera()
+})
+
+/** Geofence aktif: kamera dinyalakan begitu lokasi berubah jadi valid. */
+watch(statusLokasi, (status) => {
+  if (status === 'valid' && (faceStatus.value === 'idle' || faceStatus.value === 'error')) {
+    siapkanKamera()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -187,14 +204,8 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
 
   try {
     // Sesi TIDAK dikirim: server menentukan masuk/pulang dari jam.
-    // Kirim koordinat & akurasi GPS untuk geofencing + jejak absensi.
-    const res = await api.studentScan(
-      descriptor,
-      photo,
-      lokasi.value.lat,
-      lokasi.value.lng,
-      lokasi.value.accuracy,
-    )
+    // Kirim koordinat GPS untuk geofencing & history.
+    const res = await api.studentScan(descriptor, photo, lokasi.value.lat, lokasi.value.lng)
     lastScan.value = res
     stopFaceScan()
     router.push('/siswa/berhasil')
@@ -215,36 +226,32 @@ async function kirimAbsen(descriptor: number[], photo?: string) {
       return
     }
 
-    if (kode === 'outside_school_area') {
-      statusLokasi.value = 'invalid'
-      stopFaceScan()
-      notice.value = apiErrorMessage(error)
-      submitting.value = false
-      return
-    }
-
-    if (kode === 'location_required' || kode === 'location_not_configured') {
-      statusLokasi.value = 'error'
-      errorMessageLokasi.value = apiErrorMessage(error)
-      stopFaceScan()
-      notice.value = apiErrorMessage(error)
-      submitting.value = false
-      return
-    }
-
     notice.value = apiErrorMessage(error)
     submitting.value = false
     // Ulangi pemindaian setelah gangguan sementara.
-    if (statusLokasi.value === 'valid' && !closed.value) {
+    if (statusLokasi.value === 'valid') {
       startFaceScan()
     }
   }
 }
 
-function mulaiScan() {
+/** Tombol utama: mulai memindai, atau nyalakan ulang kamera bila error. */
+/** Tombol utama: mulai memindai, atau nyalakan ulang kamera bila error. */
+async function mulaiScan() {
   if (!bisaScan.value) return
+
+  if (faceStatus.value === 'error' || faceStatus.value === 'idle') {
+    notice.value = ''
+    await siapkanKamera()
+    // Dibaca lewat fungsi agar TypeScript tidak memakai status lama.
+    if (!kameraSiap()) return
+  }
+
   startFaceScan()
 }
+
+/** Status kamera saat ini: ready bila sudah siap memindai. */
+const kameraSiap = () => faceStatus.value === 'ready'
 
 const statusText = computed(() => {
   switch (faceStatus.value) {
@@ -260,6 +267,26 @@ const statusText = computed(() => {
       return 'Siap memindai'
   }
 })
+
+/** Teks tombol utama. */
+const labelTombol = computed(() => {
+  if (closed.value) return 'Absen Ditutup'
+  if (statusLokasi.value !== 'valid') return 'Tidak di Area Sekolah'
+  if (faceStatus.value === 'error') return 'Coba Lagi'
+  if (faceStatus.value === 'scanning' || submitting.value) return 'Memindai…'
+  return 'Mulai Scan'
+})
+
+/** Tombol nonaktif saat kamera sedang disiapkan, memindai, atau ditutup. */
+const tombolNonaktif = computed(
+  () =>
+    submitting.value ||
+    closed.value ||
+    statusLokasi.value !== 'valid' ||
+    faceStatus.value === 'loading' ||
+    faceStatus.value === 'scanning' ||
+    faceStatus.value === 'detected',
+)
 </script>
 
 <template>
@@ -326,13 +353,12 @@ const statusText = computed(() => {
     <!-- ── Info sesi (ditentukan server dari jam) ── -->
     <div class="px-5 pt-3">
       <div class="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5">
-        <AppIcon name="clock" :size="16" class="text-brand-600" />
+        <AppIcon name="clock" :size="16" class="text-blue-600" />
         <span class="text-sm font-semibold text-slate-700">
           {{ closed ? 'Absen ditutup' : labelSesi }}
         </span>
-        <span v-if="jendela" class="text-xs text-slate-400">
-          · {{ sesiSaatIni === 'pulang' ? 'mulai' : 'sampai' }}
-          {{ sesiSaatIni === 'pulang' ? jendela.pulang_from : jendela.self_cutoff }}
+        <span v-if="jamBatas" class="text-xs text-slate-400">
+          · {{ sesiSaatIni === 'pulang' ? 'mulai' : 'sampai' }} {{ jamBatas }}
         </span>
       </div>
     </div>
@@ -360,12 +386,13 @@ const statusText = computed(() => {
 
         <template v-else>
           <div class="relative aspect-square w-full overflow-hidden rounded-3xl">
+            <!-- -scale-x-100: tampilan cermin (hanya tampilan, foto bukti tidak dibalik) -->
             <video
               ref="videoRef"
               autoplay
               playsinline
               muted
-              class="h-full w-full object-cover"
+              class="h-full w-full -scale-x-100 object-cover"
             ></video>
 
             <!-- Overlay panduan wajah -->
@@ -403,24 +430,16 @@ const statusText = computed(() => {
         {{ notice }}
       </p>
 
-      <!-- ── Tombol mulai scan ── -->
+      <!-- ── Tombol mulai scan / coba lagi ── -->
       <button
         type="button"
         data-testid="mulai-scan"
         class="btn-primary mt-5 mb-6"
-        :disabled="faceStatus !== 'ready' || submitting || closed || statusLokasi !== 'valid'"
+        :disabled="tombolNonaktif"
         @click="mulaiScan"
       >
         <AppIcon name="scan-face" :size="20" />
-        <span>{{
-          closed
-            ? 'Absen Ditutup'
-            : statusLokasi !== 'valid'
-              ? 'Tidak di Area Sekolah'
-              : faceStatus === 'scanning' || submitting
-                ? 'Memindai…'
-                : 'Mulai Scan'
-        }}</span>
+        <span>{{ labelTombol }}</span>
       </button>
     </div>
 
@@ -448,16 +467,16 @@ const statusText = computed(() => {
           <ol class="mt-4 space-y-3 text-sm text-slate-600">
             <template v-if="geofenceAktif">
               <li class="flex gap-3">
-                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">1</span>
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">1</span>
                 <span>Pastikan kamu berada di dalam area sekolah (maksimal jarak {{ radiusMeter }} meter).</span>
               </li>
               <li class="flex gap-3">
-                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">2</span>
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">2</span>
                 <span>Izinkan akses lokasi GPS saat diminta.</span>
               </li>
             </template>
             <li class="flex gap-3">
-              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">{{ geofenceAktif ? 3 : 1 }}</span>
+              <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">{{ geofenceAktif ? 3 : 1 }}</span>
               <span>Tekan <span class="font-semibold text-slate-900">Mulai Scan</span>, posisikan wajah di dalam lingkaran hingga terverifikasi otomatis.</span>
             </li>
           </ol>

@@ -1,5 +1,5 @@
 /** Route yang boleh dibuka tanpa login. */
-const PUBLIC_ROUTES = ['/login', '/scan']
+const PUBLIC_ROUTES = ['/login']
 
 export default defineNuxtRouteMiddleware((to) => {
   const { isLoggedIn } = useAuth()

@@ -46,9 +46,7 @@
 
       <!-- Profil pengguna -->
       <div class="flex items-center gap-3 border-l border-gray-200 pl-4">
-        <div
-          class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-900 text-sm font-semibold text-white"
-        >
+        <div :class="avatarClass">
           {{ userInitial }}
         </div>
         <div class="hidden flex-col md:flex">
@@ -69,6 +67,23 @@ const props = defineProps<{
   /** Override sub-judul halaman. */
   subtitle?: string
 }>()
+
+/* ------------------------------------------------------------------ */
+/* Gaya avatar                                                         */
+/* ------------------------------------------------------------------ */
+
+const AVATAR_BASE =
+  'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold shadow-md ring-1 ring-white/20'
+
+// Petugas: gradient biru
+const AVATAR_BLUE = `${AVATAR_BASE} bg-gradient-to-b from-[#006FBE] to-[#004A80] text-white shadow-[#006FBE]/40`
+
+// Admin: gradient gold
+const AVATAR_GOLD = `${AVATAR_BASE} bg-gradient-to-b from-[#E8B923] to-[#B8860B] text-[#17324D] shadow-[#D4A017]/40`
+
+/* ------------------------------------------------------------------ */
+/* Judul halaman                                                       */
+/* ------------------------------------------------------------------ */
 
 const route = useRoute()
 const { user } = useAuth()
@@ -99,6 +114,10 @@ const pageSubtitle = computed(() => {
   return pageSubtitles[route.path] ?? ''
 })
 
+/* ------------------------------------------------------------------ */
+/* Tanggal & pengguna                                                  */
+/* ------------------------------------------------------------------ */
+
 const todayLabel = computed(() =>
   new Intl.DateTimeFormat('id-ID', { weekday: 'long' }).format(new Date()),
 )
@@ -112,4 +131,9 @@ const todayDate = computed(() =>
 const userName = computed(() => user.value?.name || 'Admin')
 const userRole = computed(() => user.value?.role || 'Admin')
 const userInitial = computed(() => userName.value.charAt(0).toUpperCase() || 'A')
+
+// Petugas biru, selain itu (admin) gold
+const avatarClass = computed(() =>
+  userRole.value.toLowerCase() === 'petugas' ? AVATAR_BLUE : AVATAR_GOLD,
+)
 </script>

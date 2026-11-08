@@ -1,10 +1,11 @@
 <template>
-  <aside class="flex h-full w-64 shrink-0 flex-col bg-emerald-900">
+  <aside class="flex h-full w-64 shrink-0 flex-col" :class="SIDEBAR_CLASS">
     <!-- Bagian Atas: Logo / Nama Sistem -->
     <div class="flex items-center gap-3 px-6 py-6">
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10">
         <ShieldCheck class="h-5 w-5 text-white" />
       </div>
+
       <div class="flex flex-col">
         <span class="text-base font-bold leading-tight text-white">Presensi</span>
         <span class="text-xs leading-tight text-white/60">{{ subtitle }}</span>
@@ -18,11 +19,7 @@
         :key="item.to"
         :to="item.to"
         class="flex items-center gap-3 rounded-md px-4 py-3 text-sm transition-colors duration-150"
-        :class="
-          isActive(item)
-            ? 'bg-emerald-800 font-medium text-white'
-            : 'text-white/70 hover:bg-emerald-800/50 hover:text-white'
-        "
+        :class="isActive(item) ? activeClass : INACTIVE_CLASS"
         :aria-current="isActive(item) ? 'page' : undefined"
       >
         <component :is="item.icon" class="h-5 w-5 shrink-0" />
@@ -34,7 +31,7 @@
     <div class="flex flex-col gap-1 border-t border-white/10 p-3">
       <button
         type="button"
-        class="flex w-full items-center gap-3 rounded-md px-4 py-3 text-sm text-white/70 transition-colors duration-150 hover:bg-emerald-800/50 hover:text-white"
+        class="flex w-full items-center gap-3 rounded-md px-4 py-3 text-sm text-white/70 transition-colors duration-150 hover:bg-[#244967] hover:text-white"
         @click="handleLogout"
       >
         <LogOut class="h-5 w-5 shrink-0" />
@@ -45,8 +42,16 @@
 </template>
 
 <script setup lang="ts">
-import { Database, LayoutDashboard, LogOut, Settings, ShieldCheck, UsersRound } from '@lucide/vue'
+import { computed } from 'vue'
 import type { Component } from 'vue'
+import {
+  Database,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  ShieldCheck,
+  UsersRound,
+} from '@lucide/vue'
 
 export interface SidebarItem {
   label: string
@@ -59,12 +64,14 @@ export interface SidebarItem {
   exact?: boolean
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** Item menu navigasi. Default: menu dashboard admin. */
     items?: SidebarItem[]
     /** Teks kecil di bawah nama sistem. */
     subtitle?: string
+    /** Warna menu aktif: 'gold' (emas) atau 'blue' (biru). */
+    variant?: 'blue' | 'gold'
   }>(),
   {
     items: () => [
@@ -72,14 +79,29 @@ withDefaults(
       { label: 'Data Siswa', to: '/siswa', icon: Database },
       { label: 'Kelola Petugas', to: '/kelola-petugas', icon: UsersRound },
       { label: 'Pengaturan', to: '/pengaturan', icon: Settings },
-      /*
-       * "Lokasi Sekolah" sudah dipindah ke tab Pengaturan > Lokasi. Halaman
-       * lama di /lokasi-sekolah tetap ada sebagai redirect/kompatibilitas.
-       */
     ],
     subtitle: 'Dashboard Admin',
+    variant: 'gold',
   },
 )
+
+/* ------------------------------------------------------------------ */
+/* Gaya                                                                */
+/* ------------------------------------------------------------------ */
+
+const SIDEBAR_CLASS = 'bg-[#17324D]'
+
+const INACTIVE_CLASS = 'text-white/70 hover:bg-[#244967] hover:text-white'
+
+const activeClass = computed(() =>
+  props.variant === 'gold'
+    ? 'bg-[#D4A017] font-medium text-[#17324D]'
+    : 'bg-[#006FBE] font-medium text-white',
+)
+
+/* ------------------------------------------------------------------ */
+/* Navigasi                                                            */
+/* ------------------------------------------------------------------ */
 
 const route = useRoute()
 const { logout } = useAuth()

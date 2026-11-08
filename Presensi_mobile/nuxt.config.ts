@@ -34,11 +34,16 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: '/api/v1',
-      /*
-       * Titik & radius sekolah TIDAK lagi diatur dari env. Admin mengaturnya
-       * di panel Pengaturan > Lokasi; app siswa mengambil /school-location
-       * saat halaman scan dibuka sehingga perubahan langsung berlaku.
-       */
+      // Koordinat & radius sekolah buat geofencing (desimal). Nilai ini hanya
+      // fallback: app siswa mengambil pengaturan terbaru dari endpoint
+      // /school-location saat halaman scan dibuka.
+      schoolLat: process.env.NUXT_PUBLIC_SCHOOL_LAT || '-6.188410',
+      schoolLng: process.env.NUXT_PUBLIC_SCHOOL_LNG || '106.924823',
+      schoolRadius: process.env.NUXT_PUBLIC_SCHOOL_RADIUS_METER || '100',
+      // Saklar geofencing. `false` = siswa bisa absen dari mana saja (fitur
+      // lokasi dimatikan sementara). Nyalakan dengan env
+      // NUXT_PUBLIC_GEOFENCE_ENABLED=true.
+      geofenceEnabled: process.env.NUXT_PUBLIC_GEOFENCE_ENABLED || 'false',
     },
   },
 
@@ -61,7 +66,7 @@ export default defineNuxtConfig({
       title: 'Absensi Digital',
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover' },
-        { name: 'theme-color', content: '#005a3f' },
+        { name: 'theme-color', content: '#006FBE' },
         { name: 'description', content: 'Aplikasi absensi siswa berbasis face recognition & fingerprint.' },
       ],
       link: [

@@ -3,8 +3,8 @@
     <!-- ===================== HEADER ===================== -->
     <header class="flex flex-col gap-4 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white">
-          <ScanFace class="h-5 w-5" />
+        <div :class="[ICON_TILE, 'h-10 w-10']">
+          <ScanFace class="h-5 w-5 drop-shadow" />
         </div>
         <div class="flex flex-col">
           <span class="text-base font-bold leading-tight text-slate-800">Mesin Absensi Operasional</span>
@@ -27,27 +27,6 @@
       </div>
     </header>
 
-    <!-- Pop notifikasi di paling atas layar (selalu terlihat, tidak menggeser layout) -->
-    <transition name="notice-pop">
-      <div
-        v-if="scanError"
-        class="notice-pop fixed left-1/2 top-4 z-50 flex w-[min(28rem,calc(100vw-2rem))] items-start gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 shadow-lg shadow-slate-900/15"
-        role="status"
-        aria-live="polite"
-      >
-        <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-        <p class="flex-1 text-sm text-slate-700">{{ scanError }}</p>
-        <button
-          type="button"
-          class="shrink-0 rounded-md p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          aria-label="Tutup notifikasi"
-          @click="dismissNotice"
-        >
-          <X class="h-4 w-4" />
-        </button>
-      </div>
-    </transition>
-
     <!-- ===================== KONTEN UTAMA ===================== -->
     <section class="grid flex-1 gap-6 p-6 lg:grid-cols-3">
       <!-- Kolom kiri: kamera pemindai + hasil -->
@@ -63,7 +42,7 @@
               :class="[
                 modeOpt.value !== 'face' ? 'border-l border-gray-200' : '',
                 mode === modeOpt.value
-                  ? 'bg-emerald-900 text-white'
+                  ? BTN_GRADIENT
                   : 'bg-white text-gray-600 hover:bg-slate-50',
               ]"
               @click="switchMode(modeOpt.value)"
@@ -78,6 +57,7 @@
           <base-button
             v-if="mode === 'face'"
             :variant="scanning ? 'outline' : 'solid'"
+            :class="scanning ? '' : BTN_GRADIENT"
             :data-testid="scanning ? 'hentikan-scan' : 'mulai-scan'"
             :disabled="faceStatus === 'loading'"
             @click="scanning ? stopScanning() : startScanning()"
@@ -99,10 +79,10 @@
               class="h-full w-full -scale-x-100 object-cover"
             />
 
-            <!-- Overlay garis pembidik wajah -->
+            <!-- Overlay garis pembidik wajah: lingkaran hijau -->
             <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div
-                class="h-64 w-48 rounded-[50%] border-2 border-dashed transition-colors"
+                class="h-64 w-64 rounded-full border-2 border-dashed transition-colors"
                 :class="guideClass"
               />
             </div>
@@ -125,30 +105,58 @@
               v-if="faceStatus === 'loading'"
               class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/75 text-white"
             >
-              <Loader2 class="h-7 w-7 animate-spin text-emerald-400" />
+              <Loader2 class="h-7 w-7 animate-spin text-sky-300" />
               <p class="text-sm text-gray-200">Menyiapkan kamera &amp; model...</p>
             </div>
 
-            <!-- Overlay error kamera & model -->
+            <!-- Overlay: izin kamera DIBLOKIR (browser tidak bisa meminta lagi) -->
+            <div
+              v-else-if="faceStatus === 'error' && cameraPermission === 'denied'"
+              class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-black/85 px-6 py-4 text-center text-white"
+              data-testid="izin-kamera-diblokir"
+            >
+              <CameraOff class="h-9 w-9 text-sky-300" />
+              <h3 class="text-base font-semibold">Izin kamera diblokir</h3>
+              <p class="max-w-md text-xs text-gray-300">
+                Browser mengingat pilihan "Blokir" dan tidak akan menampilkan permintaan izin lagi
+                saat halaman dimuat ulang. Izinkan kamera secara manual:
+              </p>
+              <ol class="max-w-md list-decimal space-y-1 pl-5 text-left text-xs text-gray-200">
+                <li>Klik ikon pengaturan (gembok) di sebelah kiri alamat halaman ini.</li>
+                <li>Ubah <span class="font-semibold">Kamera</span> menjadi <span class="font-semibold">Izinkan</span>.</li>
+                <li>Kembali ke halaman ini. Pemindaian dimulai otomatis, atau klik Coba Lagi.</li>
+              </ol>
+              <div class="mt-1 flex flex-col gap-2 sm:flex-row">
+                <base-button variant="solid" :class="BTN_GRADIENT" @click="retryCamera">
+                  <RotateCcw class="h-4 w-4" />
+                  Coba Lagi
+                </base-button>
+                <base-button variant="outline" @click="reloadPage">
+                  Muat Ulang Halaman
+                </base-button>
+              </div>
+            </div>
+
+            <!-- Overlay error kamera & model (selain izin) -->
             <div
               v-else-if="faceStatus === 'error'"
               class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85 px-6 text-center text-white"
             >
               <CameraOff class="h-9 w-9 text-gray-300" />
               <p class="max-w-sm text-sm text-gray-200">{{ faceError }}</p>
-              <base-button variant="solid" @click="startScanning">
+              <base-button variant="solid" :class="BTN_GRADIENT" @click="retryCamera">
                 <RotateCcw class="h-4 w-4" />
                 Coba Lagi
               </base-button>
             </div>
           </template>
 
-          <!-- Mode fingerprint (disembunyikan sementara, lihat `tampilkanFingerprint`) -->
+          <!-- Mode fingerprint -->
           <div
-            v-else-if="tampilkanFingerprint"
+            v-else
             class="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center text-white"
           >
-            <Fingerprint class="h-24 w-24 animate-pulse text-emerald-400" />
+            <Fingerprint class="h-24 w-24 animate-pulse text-sky-300" />
             <div>
               <h3 class="text-base font-semibold">Tempelkan sidik jari pada perangkat</h3>
               <p class="mt-1 text-sm text-gray-300">
@@ -156,9 +164,9 @@
               </p>
             </div>
             <div
-              class="flex items-center gap-2 rounded-md border border-white/20 bg-white/5 px-4 py-2 text-sm text-emerald-300"
+              class="flex items-center gap-2 rounded-md border border-white/20 bg-white/5 px-4 py-2 text-sm text-sky-200"
             >
-              <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+              <span class="h-2 w-2 animate-pulse rounded-full bg-sky-300" />
               Menunggu sidik jari...
             </div>
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -174,29 +182,27 @@
           </div>
         </div>
 
-        <!-- Hasil absensi terakhir (disembunyikan sementara, lihat `tampilkanHasilTerakhir`) -->
+        <!-- Hasil absensi terakhir -->
         <div
-          v-if="tampilkanHasilTerakhir && result"
+          v-if="result"
           class="rounded-2xl border bg-white p-5 shadow-sm"
-          :class="result.ok ? 'border-emerald-200' : 'border-amber-200'"
+          :class="result.ok ? 'border-sky-200' : 'border-amber-200'"
         >
           <div
             class="flex items-center gap-3 rounded-md px-4 py-3"
-            :class="result.ok ? 'border border-emerald-200 bg-emerald-50' : 'border border-amber-200 bg-amber-50'"
+            :class="result.ok ? 'border border-sky-200 bg-sky-50' : 'border border-amber-200 bg-amber-50'"
           >
-            <CheckCircle2 class="h-5 w-5 shrink-0" :class="result.ok ? 'text-emerald-700' : 'text-amber-600'" />
+            <CheckCircle2 class="h-5 w-5 shrink-0" :class="result.ok ? 'text-[#006FBE]' : 'text-amber-600'" />
             <div>
-              <p class="text-sm font-semibold" :class="result.ok ? 'text-emerald-800' : 'text-amber-800'">
+              <p class="text-sm font-semibold" :class="result.ok ? 'text-[#004A80]' : 'text-amber-800'">
                 {{ result.banner }}
               </p>
-              <p class="text-xs" :class="result.ok ? 'text-emerald-700' : 'text-amber-700'">{{ result.jam }}</p>
+              <p class="text-xs" :class="result.ok ? 'text-[#006FBE]' : 'text-amber-700'">{{ result.jam }}</p>
             </div>
           </div>
 
           <div class="mt-5 flex items-center gap-4">
-            <div
-              class="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-xl font-semibold text-white"
-            >
+            <div :class="[AVATAR_TILE, 'h-16 w-16 rounded-lg text-xl']">
               {{ initial(result.name) }}
             </div>
             <div class="min-w-0">
@@ -233,7 +239,7 @@
 
           <div
             v-if="result.ok && result.waQueued"
-            class="mt-5 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs font-medium text-emerald-800"
+            class="mt-5 flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50/60 px-4 py-3 text-xs font-medium text-[#004A80]"
           >
             <MessageCircle class="h-4 w-4 shrink-0" />
             Notifikasi WhatsApp (foto + detail absensi) dikirim ke wali
@@ -246,6 +252,16 @@
             Notifikasi WhatsApp tidak dikirim — kontak wali ber-consent belum tersedia atau fitur dinonaktifkan
           </div>
         </div>
+
+        <!-- Pesan error scan -->
+        <p
+          v-if="scanError"
+          class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          role="alert"
+        >
+          <TriangleAlert class="h-4 w-4 shrink-0" />
+          {{ scanError }}
+        </p>
       </div>
 
       <!-- Kolom kanan: live log absensi -->
@@ -266,9 +282,7 @@
             :key="item.id"
             class="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2.5"
           >
-            <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-900 text-sm font-semibold text-white"
-            >
+            <span :class="[AVATAR_TILE, 'h-9 w-9 rounded-full text-sm']">
               {{ initial(item.name) }}
             </span>
             <div class="min-w-0 flex-1">
@@ -279,7 +293,7 @@
               <span class="text-xs font-medium tabular-nums text-slate-700">{{ item.time }}</span>
               <span
                 class="text-xs font-medium"
-                :class="item.created ? 'text-emerald-600' : 'text-amber-600'"
+                :class="item.created ? 'text-[#006FBE]' : 'text-amber-600'"
               >
                 {{ item.created ? 'Berhasil' : 'Sudah tercatat' }}
               </span>
@@ -304,7 +318,7 @@
     >
       <template #footer>
         <base-button variant="outline" @click="cancelLeave">Batal</base-button>
-        <base-button variant="solid" @click="confirmLeave">Keluar</base-button>
+        <base-button variant="solid" :class="BTN_GRADIENT" @click="confirmLeave">Keluar</base-button>
       </template>
     </modal>
   </div>
@@ -323,14 +337,34 @@ import {
   TriangleAlert,
   X,
 } from '@lucide/vue'
-import type { ApiAttendance, ScanResult as ApiScanResult } from '#layers/shared/app/composables/useApi'
+import type {
+  ApiAttendance,
+  ApiAttendanceWindow,
+  ScanResult as ApiScanResult,
+} from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: false,
 })
 
+/* ------------------------------------------------------------------ */
+/* Gaya                                                                */
+/* ------------------------------------------------------------------ */
+
+const BLUE_BG = 'bg-gradient-to-b from-[#006FBE] to-[#004A80]'
+
+// Tombol utama & tombol mode aktif: gradient biru + bayangan berwarna
+const BTN_GRADIENT = `${BLUE_BG} text-white shadow-md shadow-[#006FBE]/30 hover:brightness-110`
+
+// Kotak ikon header
+const ICON_TILE = `flex shrink-0 items-center justify-center rounded-lg text-white shadow-md shadow-[#006FBE]/40 ring-1 ring-white/20 ${BLUE_BG}`
+
+// Avatar inisial siswa (hasil scan & riwayat)
+const AVATAR_TILE = `flex shrink-0 items-center justify-center font-semibold text-white shadow-sm ring-1 ring-white/20 ${BLUE_BG}`
+
 type Session = 'masuk' | 'pulang'
 type ScanMode = 'face' | 'fingerprint'
+type CameraPermission = 'granted' | 'denied' | 'prompt' | 'unknown'
 
 interface LogItem {
   id: number
@@ -361,29 +395,10 @@ const api = useApi()
 /** Konfirmasi sebelum keluar dari mode kiosk. */
 const { leaveModalOpen, requestLeave, confirmLeave, cancelLeave } = useLeaveGuard()
 
-/**
- * Mode fingerprint disembunyikan sementara: perangkat sidik jari belum bisa
- * dipakai di lapangan, jadi pemindaian selalu berakhir dengan pesan gagal.
- * Seluruh kode fingerprint sengaja dibiarkan utuh — ubah flag ini ke `true`
- * untuk memunculkan kembali tombol mode & panel sidik jarinya.
- */
-const tampilkanFingerprint = false
-
-/**
- * Kartu "Hasil absensi terakhir" di bawah kamera disembunyikan sementara:
- * informasinya sudah terwakili pop notifikasi di atas dan riwayat scan di
- * kanan. Ubah ke `true` untuk menampilkan kartunya lagi.
- */
-const tampilkanHasilTerakhir = false
-
-const semuaMode = [
+const modeOptions = [
   { value: 'face', label: 'Wajah', icon: ScanFace },
   { value: 'fingerprint', label: 'Fingerprint', icon: Fingerprint },
 ] as const
-
-const modeOptions = computed(() =>
-  tampilkanFingerprint ? semuaMode : semuaMode.filter((opt) => opt.value !== 'fingerprint'),
-)
 
 const {
   videoRef,
@@ -405,36 +420,75 @@ const scanError = ref('')
 const fingerprintScanning = ref(false)
 const processing = ref(false)
 const autoScan = ref(true)
-/** Jendela absen dari server (jadwal per hari, libur, hari aktif). */
-const window = ref<ApiAttendanceWindow | null>(null)
+/** Jendela absen dari server (batas jam, jadwal hari ini, status buka/tutup). */
+const attendanceWindow = ref<ApiAttendanceWindow | null>(null)
 const now = ref(new Date())
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let resumeTimer: ReturnType<typeof setTimeout> | null = null
 let fingerprintTimer: ReturnType<typeof setTimeout> | null = null
-let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
-/** Lama pop notifikasi di bawah kamera tampil sebelum hilang sendiri. */
-const NOTICE_DURATION = 5000
+/* ---------- Izin kamera ---------- */
+/** Status izin kamera dari browser: granted / denied / prompt / unknown. */
+const cameraPermission = ref<CameraPermission>('unknown')
 
-/** Tutup pop notifikasi lebih awal (tombol X). */
-const dismissNotice = () => {
-  if (noticeTimer) clearTimeout(noticeTimer)
-  noticeTimer = null
-  scanError.value = ''
+let permissionStatus: PermissionStatus | null = null
+let retrying = false
+
+/**
+ * Nyalakan ulang kamera. Bila izin masih "prompt", browser menampilkan dialog
+ * izin; bila "denied", browser tidak akan menampilkannya lagi (harus diubah
+ * manual lewat ikon gembok), jadi panel petunjuk tetap tampil.
+ */
+const retryCamera = async () => {
+  if (retrying || mode.value !== 'face') return
+
+  retrying = true
+  try {
+    scanError.value = ''
+    await initFace()
+    if (faceStatus.value === 'ready') {
+      autoScan.value = true
+      startScan()
+    }
+  } finally {
+    retrying = false
+  }
 }
 
-// Setiap pesan scan baru otomatis tampil sebagai pop, lalu hilang sendiri.
-watch(scanError, (message) => {
-  if (noticeTimer) clearTimeout(noticeTimer)
-  noticeTimer = null
-  if (!message) return
+const handlePermissionChange = () => {
+  if (!permissionStatus) return
 
-  noticeTimer = setTimeout(() => {
-    noticeTimer = null
-    scanError.value = ''
-  }, NOTICE_DURATION)
-})
+  cameraPermission.value = permissionStatus.state as CameraPermission
+
+  // Izin baru saja diubah (diizinkan atau direset): coba nyalakan kamera lagi.
+  if (permissionStatus.state !== 'denied') retryCamera()
+}
+
+/** Pantau izin kamera supaya halaman bereaksi saat izin diubah petugas. */
+const watchCameraPermission = async () => {
+  try {
+    const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
+    permissionStatus = status
+    cameraPermission.value = status.state as CameraPermission
+    status.onchange = handlePermissionChange
+  } catch {
+    // Browser tidak mendukung query izin kamera; andalkan tombol Coba Lagi.
+    cameraPermission.value = 'unknown'
+  }
+}
+
+/** Petugas kembali ke jendela ini (mis. setelah mengubah izin): coba lagi. */
+const handleWindowFocus = () => {
+  if (mode.value !== 'face' || faceStatus.value !== 'error') return
+
+  if (permissionStatus) cameraPermission.value = permissionStatus.state as CameraPermission
+  if (cameraPermission.value !== 'denied') retryCamera()
+}
+
+const reloadPage = () => {
+  globalThis.location.reload()
+}
 
 /* ---------- Format ---------- */
 const toIsoDate = (date: Date) =>
@@ -454,18 +508,18 @@ const longDateFormat = new Intl.DateTimeFormat('id-ID', {
   year: 'numeric',
 })
 
-/** Menit sejak tengah malam dari "HH:MM" (null bila tidak valid). */
-const keMenit = (jam: string | null | undefined) => {
-  if (!jam) return null
+/** Menit sejak tengah malam dari "HH:MM". */
+const keMenit = (jam: string) => {
   const [h, m] = jam.split(':').map(Number)
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
   return (h ?? 0) * 60 + (m || 0)
 }
 
 /** Sesi menurut jam server (dipakai saat override manual tidak aktif). */
 const sesiOtotomatis = computed<Session>(() => {
   const menitSekarang = now.value.getHours() * 60 + now.value.getMinutes()
-  const pulangFrom = keMenit(window.value?.pulang_from) ?? 15 * 60
+  const pulangFrom = attendanceWindow.value?.pulang_from
+    ? keMenit(attendanceWindow.value.pulang_from)
+    : 15 * 60
   return menitSekarang >= pulangFrom ? 'pulang' : 'masuk'
 })
 
@@ -490,16 +544,22 @@ const scanning = computed(() =>
 const statusChip = computed(() => {
   switch (faceStatus.value) {
     case 'scanning':
-      return { label: 'Memindai wajah', icon: Loader2, class: 'border-emerald-200 bg-emerald-50 text-emerald-800', spin: true }
+      return { label: 'Memindai wajah', icon: Loader2, class: 'border-sky-200 bg-sky-50 text-[#004A80]', spin: true }
     case 'detected':
-      return { label: 'Wajah terdeteksi', icon: CheckCircle2, class: 'border-emerald-200 bg-emerald-50 text-emerald-800', spin: false }
+      return { label: 'Wajah terdeteksi', icon: CheckCircle2, class: 'border-sky-200 bg-sky-50 text-[#004A80]', spin: false }
     case 'error':
-      return { label: 'Kamera bermasalah', icon: TriangleAlert, class: 'border-red-200 bg-red-50 text-red-700', spin: false }
+      return {
+        label: cameraPermission.value === 'denied' ? 'Izin kamera ditolak' : 'Kamera bermasalah',
+        icon: TriangleAlert,
+        class: 'border-red-200 bg-red-50 text-red-700',
+        spin: false,
+      }
     default:
       return { label: 'Menyiapkan...', icon: Loader2, class: 'border-gray-200 bg-gray-50 text-gray-600', spin: true }
   }
 })
 
+/** Warna lingkaran pembidik wajah: hijau di semua kondisi. */
 const guideClass = computed(() => {
   if (faceStatus.value === 'detected') return 'border-emerald-500'
   if (faceStatus.value === 'scanning') return 'animate-pulse border-emerald-400'
@@ -543,7 +603,7 @@ const mapScan = (res: ApiScanResult): ScanResultView => {
 const loadBoundary = async () => {
   try {
     const res = await api.meta()
-    window.value = res.data.attendance_window
+    attendanceWindow.value = res.data.attendance_window
     // Set sesi awal dari jam server.
     session.value = sesiOtotomatis.value
   } catch {
@@ -679,9 +739,15 @@ onMounted(async () => {
     now.value = new Date()
   }, 1000)
 
+  globalThis.addEventListener('focus', handleWindowFocus)
+
   await Promise.all([loadBoundary(), loadHistory()])
 
-  // Kamera + model otomatis menyala, lalu langsung memindai.
+  // Pantau izin kamera lebih dulu agar perubahan izin langsung terdeteksi.
+  await watchCameraPermission()
+
+  // Kamera + model otomatis menyala. Bila izin masih "prompt", dialog izin
+  // browser muncul di sini; bila "denied", panel petunjuk yang tampil.
   await initFace()
   if (faceStatus.value === 'ready') startScan()
 })
@@ -689,26 +755,9 @@ onMounted(async () => {
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer)
   if (resumeTimer) clearTimeout(resumeTimer)
-  if (noticeTimer) clearTimeout(noticeTimer)
+  globalThis.removeEventListener('focus', handleWindowFocus)
+  if (permissionStatus) permissionStatus.onchange = null
   stopFingerprint()
   stopScan()
 })
 </script>
-
-<style scoped>
-/* Pop notifikasi di bawah area kamera: muncul/hilang halus tanpa menggeser layout. */
-.notice-pop {
-  transform: translateX(-50%);
-}
-
-.notice-pop-enter-active,
-.notice-pop-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-.notice-pop-enter-from,
-.notice-pop-leave-to {
-  opacity: 0;
-  transform: translate(-50%, -8px);
-}
-</style>

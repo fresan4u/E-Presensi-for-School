@@ -21,8 +21,8 @@
    */
   --color-canvas: #f8fafc; /* Latar utama workspace -> slate-50 */
   --color-surface: #ffffff; /* Kartu & tabel -> putih murni */
-  --color-brand: #064e3b; /* Hijau tua (emerald-900) -> tombol aksi */
-  --color-brand-light: #065f46; /* Hijau tua terang (emerald-800) -> state aktif sidebar */
+  --color-blue: #002746; /* Biru tua (blue-900) -> tombol aksi */
+  --color-blue-light: #003B69; /* Biru tua terang (blue-800) -> state aktif sidebar */
 }
 
 html {

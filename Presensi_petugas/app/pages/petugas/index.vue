@@ -15,22 +15,6 @@
       {{ errorMessage }}
     </p>
 
-    <!-- Filter tahun ajaran -->
-    <div class="flex flex-wrap items-center justify-end gap-2">
-      <label for="dashboard-year" class="text-sm font-medium text-slate-700">Tahun Ajaran</label>
-      <select
-        id="dashboard-year"
-        v-model="selectedYearId"
-        class="rounded-md border bg-white px-3 py-2 text-sm text-slate-800 transition-colors focus:border-emerald-900 focus:outline-none"
-        :disabled="loadingYears"
-      >
-        <option :value="null">Semua Tahun Ajaran</option>
-        <option v-for="year in academicYears" :key="year.id" :value="year.id">
-          {{ year.label }}<template v-if="year.is_active"> (Aktif)</template>
-        </option>
-      </select>
-    </div>
-
     <!-- Stat Cards -->
     <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <!-- Kartu 1: Total Siswa -->
@@ -41,10 +25,8 @@
             <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ totalStudents }}</p>
             <p class="mt-2 text-xs text-gray-500">{{ classroomCount }} kelas</p>
           </div>
-          <div
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
-          >
-            <Users class="h-5 w-5" />
+          <div :class="ICON_TILE">
+            <Users class="h-5 w-5 drop-shadow" />
           </div>
         </div>
       </base-card>
@@ -61,14 +43,12 @@
           </div>
           <div class="flex flex-col items-end gap-2">
             <span
-              class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800"
+              class="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800"
             >
               {{ hadirPersen }}%
             </span>
-            <div
-              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
-            >
-              <UserCheck class="h-5 w-5" />
+            <div :class="ICON_TILE">
+              <UserCheck class="h-5 w-5 drop-shadow" />
             </div>
           </div>
         </div>
@@ -82,10 +62,8 @@
             <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ tidakHadir }}</p>
             <p class="mt-2 text-xs text-gray-500">Belum tercatat absen masuk hari ini</p>
           </div>
-          <div
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
-          >
-            <UserX class="h-5 w-5" />
+          <div :class="ICON_TILE">
+            <UserX class="h-5 w-5 drop-shadow" />
           </div>
         </div>
       </base-card>
@@ -100,10 +78,8 @@
             <p class="mt-1 text-3xl font-semibold tracking-tight text-slate-800">{{ persentase }}%</p>
             <p class="mt-2 text-xs text-gray-500">Dihitung dari siswa yang sudah absen masuk</p>
           </div>
-          <div
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-900 text-white"
-          >
-            <Activity class="h-5 w-5" />
+          <div :class="ICON_TILE">
+            <Activity class="h-5 w-5 drop-shadow" />
           </div>
         </div>
       </base-card>
@@ -113,27 +89,41 @@
     <section class="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <base-card
         class="lg:col-span-2"
-        title="Statistik Kehadiran"
-        subtitle="Tren persentase kehadiran siswa per hari"
+        title="Aktivitas Absensi"
+        subtitle="Perbandingan hadir vs terlambat per hari"
       >
         <template #actions>
           <div class="flex items-center gap-4 text-xs text-gray-500">
             <span class="flex items-center gap-1.5">
-              <span class="h-0.5 w-4 rounded-full bg-emerald-900" />
+              <span class="h-2.5 w-2.5 rounded-sm" :class="BLUE_GRADIENT" />
               Hadir
-              <span class="font-semibold tabular-nums text-slate-700">{{ chartSummary.average }}%</span>
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-sky-300" />
+              Terlambat
             </span>
           </div>
         </template>
 
-        <div v-if="hasChartData" class="mt-4">
-          <line-chart
-            :labels="chartDays.map((day) => day.day)"
-            :series="chartSeries"
-            :max-value="100"
-            value-suffix="%"
-            height-class="h-72 md:h-80"
-          />
+        <div v-if="hasChartData" class="mt-4 flex h-56 items-end gap-2 sm:gap-3">
+          <div
+            v-for="day in chartDays"
+            :key="day.day"
+            class="flex h-full flex-1 flex-col items-center justify-end gap-2"
+          >
+            <div class="flex w-full items-end justify-center gap-1">
+              <div
+                class="w-1/2 rounded-t-sm transition-all duration-300"
+                :class="BLUE_GRADIENT"
+                :style="{ height: barHeight(day.hadir) }"
+              />
+              <div
+                class="w-1/3 rounded-t-sm bg-sky-300 transition-all duration-300"
+                :style="{ height: barHeight(day.terlambat) }"
+              />
+            </div>
+            <span class="text-xs text-gray-500">{{ day.day }}</span>
+          </div>
         </div>
 
         <div v-else class="mt-4 flex h-56 items-center justify-center text-sm text-gray-500">
@@ -170,19 +160,27 @@
 <script setup lang="ts">
 import { Activity, TriangleAlert, UserCheck, Users, UserX } from '@lucide/vue'
 import type { TableColumn } from '#layers/shared/app/components/table/DataTable.vue'
-import type { LineChartSeries } from '#layers/shared/app/components/ui/LineChart.vue'
-import type { ApiAcademicYear, ApiAttendance } from '#layers/shared/app/composables/useApi'
+import type { ApiAttendance } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: 'petugas',
   title: 'Dashboard',
 })
 
-const api = useApi()
+/* ------------------------------------------------------------------ */
+/* Gaya                                                                */
+/* ------------------------------------------------------------------ */
 
-const academicYears = ref<ApiAcademicYear[]>([])
-const selectedYearId = ref<number | null>(null)
-const loadingYears = ref(false)
+const BLUE_GRADIENT = 'bg-gradient-to-b from-[#006FBE] to-[#004A80]'
+
+// Kotak ikon kartu statistik: gradient biru + bayangan berwarna + ring tipis
+const ICON_TILE = `flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white shadow-md shadow-[#006FBE]/40 ring-1 ring-white/20 ${BLUE_GRADIENT}`
+
+/* ------------------------------------------------------------------ */
+/* State                                                               */
+/* ------------------------------------------------------------------ */
+
+const api = useApi()
 
 const totalStudents = ref(0)
 const classroomCount = ref(0)
@@ -191,7 +189,7 @@ const terlambatToday = ref(0)
 const boundaryTime = ref<string | null>(null)
 const errorMessage = ref('')
 const recentRows = ref<Record<string, unknown>[]>([])
-const chartDays = ref<Array<{ day: string; hadir: number }>>([])
+const chartDays = ref<Array<{ day: string; hadir: number; terlambat: number }>>([])
 
 const recentColumns: TableColumn[] = [
   { key: 'name', label: 'Nama' },
@@ -202,6 +200,10 @@ const recentColumns: TableColumn[] = [
 ]
 
 const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+
+/* ------------------------------------------------------------------ */
+/* Helper                                                              */
+/* ------------------------------------------------------------------ */
 
 const formatTime = (value: string) =>
   new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
@@ -225,7 +227,7 @@ const toRecentRow = (attendance: ApiAttendance) => {
 
 /** Bangun data grafik 7 hari terakhir dari daftar absensi (sesi masuk). */
 const buildChart = (attendances: ApiAttendance[]) => {
-  const days: Array<{ day: string; hadir: number }> = []
+  const days: Array<{ day: string; hadir: number; terlambat: number }> = []
 
   for (let offset = 6; offset >= 0; offset--) {
     const date = new Date()
@@ -235,37 +237,29 @@ const buildChart = (attendances: ApiAttendance[]) => {
       (attendance) => attendance.attendance_date === iso && attendance.session.code === 'masuk',
     )
 
-    const present = masuk.filter((attendance) => ['hadir', 'terlambat'].includes(attendance.status.code)).length
     days.push({
       day: DAY_LABELS[date.getDay()] ?? '',
-      hadir: totalStudents.value ? Math.round((present / totalStudents.value) * 100) : 0,
+      hadir: masuk.filter((attendance) => attendance.status.code === 'hadir').length,
+      terlambat: masuk.filter((attendance) => attendance.status.code === 'terlambat').length,
     })
   }
 
   chartDays.value = days
 }
 
-const chartSeries = computed<LineChartSeries[]>(() => [
-  {
-    label: 'Hadir',
-    color: '#064e3b',
-    area: true,
-    values: chartDays.value.map((day) => day.hadir),
-  },
-])
+/* ------------------------------------------------------------------ */
+/* Computed                                                            */
+/* ------------------------------------------------------------------ */
 
-const chartSummary = computed(() => ({
-  average: Math.round(
-    chartDays.value.reduce((total, day) => total + day.hadir, 0) / Math.max(1, chartDays.value.length),
-  ),
-}))
+const chartMax = computed(() => {
+  const values = chartDays.value.flatMap((day) => [day.hadir, day.terlambat])
+  return Math.max(1, ...values)
+})
+const barHeight = (value: number) => `${Math.round((value / chartMax.value) * 100)}%`
+const hasChartData = computed(() => chartDays.value.some((day) => day.hadir || day.terlambat))
 
-const hasChartData = computed(() => chartDays.value.some((day) => day.hadir))
-
-const tidakHadir = computed(() =>
-  Math.max(0, totalStudents.value - hadirToday.value - terlambatToday.value),
-)
 const kehadiranCount = computed(() => hadirToday.value + terlambatToday.value)
+const tidakHadir = computed(() => Math.max(0, totalStudents.value - kehadiranCount.value))
 const persentase = computed(() =>
   totalStudents.value ? Math.round((kehadiranCount.value / totalStudents.value) * 100) : 0,
 )
@@ -273,37 +267,22 @@ const hadirPersen = computed(() =>
   totalStudents.value ? Math.round((hadirToday.value / totalStudents.value) * 100) : 0,
 )
 
+/* ------------------------------------------------------------------ */
+/* Data                                                                */
+/* ------------------------------------------------------------------ */
+
 const loadDashboard = async () => {
   errorMessage.value = ''
   const today = toIsoDate(new Date())
 
   try {
     const [students, classrooms, meta, hadir, terlambat, recent] = await Promise.all([
-      api.students({
-        status: 'aktif',
-        academic_year_id: selectedYearId.value ?? undefined,
-        per_page: 1,
-      }),
+      api.students({ per_page: 1 }),
       api.classrooms(),
       api.meta(),
-      api.attendances({
-        date: today,
-        session: 'masuk',
-        status: 'hadir',
-        academic_year_id: selectedYearId.value ?? undefined,
-        per_page: 1,
-      }),
-      api.attendances({
-        date: today,
-        session: 'masuk',
-        status: 'terlambat',
-        academic_year_id: selectedYearId.value ?? undefined,
-        per_page: 1,
-      }),
-      api.attendances({
-        academic_year_id: selectedYearId.value ?? undefined,
-        per_page: 200,
-      }),
+      api.attendances({ date: today, session: 'masuk', status: 'hadir', per_page: 1 }),
+      api.attendances({ date: today, session: 'masuk', status: 'terlambat', per_page: 1 }),
+      api.attendances({ per_page: 200 }),
     ])
 
     totalStudents.value = students.meta.total
@@ -321,26 +300,5 @@ const loadDashboard = async () => {
   }
 }
 
-const loadAcademicYears = async () => {
-  loadingYears.value = true
-  try {
-    const response = await api.academicYears()
-    academicYears.value = response.data
-
-    // Default ke tahun ajaran aktif; petugas tetap bisa memilih tahun lain.
-    const active = response.data.find((year) => year.is_active)
-    if (active) selectedYearId.value = active.id
-  } catch (error) {
-    errorMessage.value = apiErrorMessage(error)
-  } finally {
-    loadingYears.value = false
-  }
-}
-
-watch(selectedYearId, loadDashboard)
-
-onMounted(async () => {
-  await loadAcademicYears()
-  await loadDashboard()
-})
+onMounted(loadDashboard)
 </script>
