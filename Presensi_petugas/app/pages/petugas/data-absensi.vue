@@ -14,9 +14,14 @@
           </base-input>
         </div>
 
-        <!-- Export (disembunyikan: sudah dipindah ke halaman Rekap Absensi) -->
-        <div v-if="tampilkanExport" class="flex lg:justify-end">
-          <base-button variant="solid" data-testid="export-csv" @click="exportCsv">
+        <!-- Export -->
+        <div class="flex lg:justify-end">
+          <base-button
+            variant="solid"
+            :class="BTN_GRADIENT"
+            data-testid="export-csv"
+            @click="exportCsv"
+          >
             <Download class="h-4 w-4" />
             Export
           </base-button>
@@ -24,27 +29,10 @@
       </div>
 
       <!-- Filter dropdown -->
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <label class="flex flex-col gap-2">
-          <span class="text-sm font-medium text-slate-800">Tahun Ajaran</span>
-          <select
-            v-model="filters.academicYearId"
-            class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus:border-emerald-900 focus:outline-none"
-            :disabled="loadingYears"
-          >
-            <option :value="null">Semua Tahun Ajaran</option>
-            <option v-for="year in academicYears" :key="year.id" :value="year.id">
-              {{ year.label }}<template v-if="year.is_active"> (Aktif)</template>
-            </option>
-          </select>
-        </label>
-
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <label class="flex flex-col gap-2">
           <span class="text-sm font-medium text-slate-800">Kelas</span>
-          <select
-            v-model="filters.classroomId"
-            class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus:border-emerald-900 focus:outline-none"
-          >
+          <select v-model="filters.classroomId" :class="SELECT_CLASS">
             <option :value="null">Semua Kelas</option>
             <option v-for="room in classrooms" :key="room.id" :value="room.id">
               {{ room.name }}
@@ -54,10 +42,7 @@
 
         <label class="flex flex-col gap-2">
           <span class="text-sm font-medium text-slate-800">Metode Absensi</span>
-          <select
-            v-model="filters.method"
-            class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus:border-emerald-900 focus:outline-none"
-          >
+          <select v-model="filters.method" :class="SELECT_CLASS">
             <option value="">Semua Metode</option>
             <option v-for="opt in methodOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -67,10 +52,7 @@
 
         <label class="flex flex-col gap-2">
           <span class="text-sm font-medium text-slate-800">Status</span>
-          <select
-            v-model="filters.status"
-            class="w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus:border-emerald-900 focus:outline-none"
-          >
+          <select v-model="filters.status" :class="SELECT_CLASS">
             <option value="">Semua Status</option>
             <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -90,7 +72,7 @@
     </p>
 
     <!-- Tabel Data Absensi -->
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-4">
       <data-table :columns="columns" :rows="rows" :empty-text="emptyText">
         <template #cell-metode="{ value }">
           <span class="text-sm text-gray-600">{{ methodLabel(String(value)) }}</span>
@@ -103,80 +85,108 @@
             {{ STATUS_META[value as AttendanceStatus].label }}
           </span>
         </template>
-        <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end">
-            <button
-              type="button"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-emerald-900 text-white transition-colors hover:bg-emerald-800 focus:outline-none"
-              :aria-label="`Edit ${String(row.name)}`"
-              data-testid="edit-row"
-              @click="openEdit(row)"
-            >
-              <Pencil class="h-4 w-4" />
-            </button>
-          </div>
-        </template>
       </data-table>
 
-      <!-- Pagination -->
-      <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
+      <!-- Pagination: panah kiri, penanda halaman, panah kanan (di tengah) -->
+      <div class="flex flex-col items-center gap-2">
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            :class="[PAGE_BTN, BTN_GRADIENT]"
+            :disabled="page <= 1"
+            aria-label="Halaman sebelumnya"
+            data-testid="page-prev"
+            @click="goToPage(page - 1)"
+          >
+            <ChevronLeft class="h-4 w-4" />
+          </button>
+
+          <span
+            class="min-w-20 rounded-md border border-[#006FBE]/20 bg-[#006FBE]/5 px-4 py-2 text-center text-sm font-semibold tabular-nums text-[#004A80]"
+            data-testid="page-indicator"
+            aria-live="polite"
+          >
+            {{ page }} / {{ totalPages }}
+          </span>
+
+          <button
+            type="button"
+            :class="[PAGE_BTN, BTN_GRADIENT]"
+            :disabled="page >= totalPages"
+            aria-label="Halaman berikutnya"
+            data-testid="page-next"
+            @click="goToPage(page + 1)"
+          >
+            <ChevronRight class="h-4 w-4" />
+          </button>
+        </div>
+
         <p class="text-xs text-gray-500">
           Menampilkan {{ fromRow }}–{{ toRow }} dari {{ totalRows }} data
         </p>
-        <pagination v-model:current-page="page" :total-pages="totalPages" />
       </div>
     </div>
-
-    <!-- Modal Edit Data Absensi -->
-    <edit-attendance-modal v-model="isEditOpen" :row="editingRow" @saved="handleSaved" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Download, Pencil, Search, TriangleAlert } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, Download, Search, TriangleAlert } from '@lucide/vue'
 import type { TableColumn } from '#layers/shared/app/components/table/DataTable.vue'
-import type { ApiAcademicYear, ApiAttendance, ApiClassroom } from '#layers/shared/app/composables/useApi'
+import type { ApiAttendance, ApiClassroom } from '#layers/shared/app/composables/useApi'
 
 definePageMeta({
   layout: 'petugas',
   title: 'Data Absensi',
 })
 
+/* ------------------------------------------------------------------ */
+/* Gaya                                                                */
+/* ------------------------------------------------------------------ */
+
+// Gradient biru: tombol Export dan panah pagination
+const BTN_GRADIENT =
+  'bg-gradient-to-b from-[#006FBE] to-[#004A80] text-white shadow-md shadow-[#006FBE]/30 hover:brightness-110'
+
+// Dasar tombol panah pagination (nonaktif = redup, tanpa efek hover)
+const PAGE_BTN =
+  'inline-flex h-9 w-9 items-center justify-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100'
+
+// Dropdown filter: fokus berwarna biru
+const SELECT_CLASS =
+  'w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus:border-[#006FBE] focus:outline-none focus:ring-1 focus:ring-[#006FBE]/30'
+
 const api = useApi()
+
+/* ---------- Status yang ditampilkan ---------- */
+/**
+ * Halaman ini hanya memuat absensi yang dicatat siswa sendiri (hadir /
+ * terlambat). Izin, sakit, dan alpa dikelola di halaman Rekap Harian.
+ */
+const VISIBLE_STATUSES: AttendanceStatus[] = ['hadir', 'terlambat']
 
 /* ---------- Filter ---------- */
 const filters = reactive({
-  academicYearId: null as number | null,
   classroomId: null as number | null,
   method: '',
   status: '',
 })
-
-const academicYears = ref<ApiAcademicYear[]>([])
-const loadingYears = ref(false)
 
 const methodOptions = (Object.keys(METHOD_LABEL) as AttendanceMethod[]).map((value) => ({
   value,
   label: METHOD_LABEL[value],
 }))
 
-const statusOptions = ATTENDANCE_STATUSES.map((value) => ({
-  value,
-  label: STATUS_META[value].label,
-}))
+const statusOptions = ATTENDANCE_STATUSES.filter((value) => VISIBLE_STATUSES.includes(value)).map(
+  (value) => ({
+    value,
+    label: STATUS_META[value].label,
+  }),
+)
 
 const classrooms = ref<ApiClassroom[]>([])
 
-/**
- * Fitur Export CSV & kolom Aksi (edit status) sudah dipindah ke halaman
- * Rekap Absensi. Kode di sini sengaja dibiarkan utuh — ubah flag ke `true`
- * untuk memunculkannya lagi di Data Absensi.
- */
-const tampilkanExport = false
-const tampilkanAksi = false
-
 /* ---------- Kolom tabel ---------- */
-const semuaKolom: TableColumn[] = [
+const columns: TableColumn[] = [
   { key: 'nis', label: 'NIS' },
   { key: 'name', label: 'Nama Siswa' },
   { key: 'kelas', label: 'Kelas' },
@@ -185,10 +195,7 @@ const semuaKolom: TableColumn[] = [
   { key: 'jamKeluar', label: 'Jam Keluar' },
   { key: 'metode', label: 'Metode' },
   { key: 'status', label: 'Status' },
-  { key: 'actions', label: 'Aksi', align: 'right' },
 ]
-
-const columns = semuaKolom.filter((column) => tampilkanAksi || column.key !== 'actions')
 
 /* ---------- Ambil data dari API ---------- */
 const PER_PAGE = 10
@@ -224,7 +231,6 @@ const toRecord = (attendance: ApiAttendance) => {
     metode: attendance.method.code.replace('_', ' '),
     status: attendance.status.code,
     catatan: attendance.note ?? undefined,
-    actions: '',
   }
 }
 
@@ -233,16 +239,16 @@ const loadRows = async () => {
   try {
     const res = await api.attendances({
       search: search.value.trim() || undefined,
-      academic_year_id: filters.academicYearId ?? undefined,
       classroom_id: filters.classroomId ?? undefined,
       method: filters.method || undefined,
-      status: filters.status || undefined,
+      // Tanpa pilihan status: tampilkan hadir + terlambat saja (dipisah koma).
+      status: filters.status || VISIBLE_STATUSES.join(','),
       page: page.value,
       per_page: PER_PAGE,
     })
     rows.value = res.data.map(toRecord)
     totalRows.value = res.meta.total
-    totalPages.value = res.meta.last_page
+    totalPages.value = Math.max(1, res.meta.last_page)
   } catch (error) {
     errorMessage.value = apiErrorMessage(error)
   }
@@ -257,20 +263,9 @@ const loadClassrooms = async () => {
   }
 }
 
-const loadAcademicYears = async () => {
-  loadingYears.value = true
-  try {
-    const res = await api.academicYears()
-    academicYears.value = res.data
-
-    // Default ke tahun ajaran aktif; petugas tetap bisa pindah tahun.
-    const active = res.data.find((year) => year.is_active)
-    if (active) filters.academicYearId = active.id
-  } catch (error) {
-    errorMessage.value = apiErrorMessage(error)
-  } finally {
-    loadingYears.value = false
-  }
+/** Pindah halaman, dijaga agar tetap di antara 1 dan halaman terakhir. */
+const goToPage = (target: number) => {
+  page.value = Math.min(Math.max(1, target), totalPages.value)
 }
 
 watch(search, () => {
@@ -292,7 +287,7 @@ const fromRow = computed(() => (totalRows.value === 0 ? 0 : (page.value - 1) * P
 const toRow = computed(() => Math.min(page.value * PER_PAGE, totalRows.value))
 
 const emptyText = computed(() =>
-  search.value.trim() || filters.academicYearId || filters.classroomId || filters.method || filters.status
+  search.value.trim() || filters.classroomId || filters.method || filters.status
     ? 'Tidak ada data yang cocok dengan filter atau pencarianmu.'
     : 'Belum ada data absensi.',
 )
@@ -328,47 +323,9 @@ const exportCsv = () => {
   URL.revokeObjectURL(url)
 }
 
-/* ---------- Modal edit ---------- */
-const isEditOpen = ref(false)
-const editingRow = ref<AttendanceRecord | null>(null)
-
-const openEdit = (row: Record<string, unknown>) => {
-  editingRow.value = {
-    id: Number(row.id),
-    nis: String(row.nis),
-    name: String(row.name),
-    kelas: String(row.kelas),
-    tanggal: String(row.tanggal),
-    jamMasuk: String(row.jamMasuk),
-    jamKeluar: String(row.jamKeluar),
-    metode: row.metode as AttendanceMethod,
-    status: row.status as AttendanceStatus,
-    catatan: row.catatan as string | undefined,
-  }
-  isEditOpen.value = true
-}
-
-const handleSaved = async (updated: AttendanceRecord) => {
-  try {
-    await api.updateAttendance(updated.id, {
-      status: updated.status,
-      note: updated.catatan ?? null,
-    })
-    rows.value = rows.value.map((row) =>
-      row.id === updated.id
-        ? { ...row, status: updated.status, catatan: updated.catatan }
-        : row,
-    )
-    isEditOpen.value = false
-  } catch (error) {
-    errorMessage.value = apiErrorMessage(error)
-  }
-}
-
 const methodLabel = (value: string) => METHOD_LABEL[value as AttendanceMethod] ?? value
 
 onMounted(async () => {
-  await loadAcademicYears()
   await Promise.all([loadRows(), loadClassrooms()])
 })
 

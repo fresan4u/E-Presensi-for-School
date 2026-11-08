@@ -44,7 +44,7 @@ async function onKeluar() {
 <template>
   <div class="min-h-dvh bg-white">
     <!-- ── Area hijau ── -->
-    <div class="bg-brand-700 px-6 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-28">
+    <div class="bg-blue-600 px-6 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-28">
       <div class="flex items-center gap-2.5">
         <span
           class="flex size-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20 ring-inset"

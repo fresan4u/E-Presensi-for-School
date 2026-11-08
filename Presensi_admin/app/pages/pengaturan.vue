@@ -1,17 +1,38 @@
 <template>
   <div class="flex flex-col gap-6">
-    <!-- Notifikasi hasil aksi -->
-    <p
-      v-if="notice"
-      class="flex items-start gap-2 rounded-md border px-4 py-3 text-sm"
-      :class="notice.type === 'success'
-        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-        : 'border-red-200 bg-red-50 text-red-700'"
-      role="status"
-    >
-      <component :is="notice.type === 'success' ? CheckCircle2 : TriangleAlert" class="mt-0.5 h-4 w-4 shrink-0" />
-      <span>{{ notice.text }}</span>
-    </p>
+    <!-- Pop-up notifikasi (melayang di tengah atas layar) -->
+    <Teleport to="body">
+      <Transition name="toast">
+        <div
+          v-if="notice"
+          class="pointer-events-none fixed inset-x-0 top-4 z-[100] flex justify-center px-4"
+        >
+          <div
+            class="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg"
+            :class="notice.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-red-200 bg-red-50 text-red-700'"
+            role="status"
+            aria-live="polite"
+            data-testid="notifikasi"
+          >
+            <component
+              :is="notice.type === 'success' ? CheckCircle2 : TriangleAlert"
+              class="mt-0.5 h-5 w-5 shrink-0"
+            />
+            <span class="min-w-0 flex-1 font-medium">{{ notice.text }}</span>
+            <button
+              type="button"
+              class="-mr-1 shrink-0 rounded p-0.5 opacity-60 transition hover:opacity-100"
+              aria-label="Tutup notifikasi"
+              @click="closeNotice"
+            >
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Ringkasan jendela absensi hari ini -->
     <section class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -48,12 +69,12 @@
             <p class="font-semibold text-slate-800">{{ timeRange(todayStatus?.pulang_from, todayStatus?.pulang_end) }}</p>
           </div>
           <div class="rounded-md bg-slate-50 px-3 py-2">
-            <p class="text-xs text-slate-500">Serah terima</p>
-            <p class="font-semibold text-slate-800">{{ todayStatus?.handover_at ?? '—' }}</p>
+            <p class="text-xs text-slate-500">Hadir sampai</p>
+            <p class="font-semibold text-slate-800">{{ todayStatus?.late_after ?? '—' }}</p>
           </div>
           <div class="rounded-md bg-slate-50 px-3 py-2">
-            <p class="text-xs text-slate-500">Batas terlambat</p>
-            <p class="font-semibold text-slate-800">{{ todayStatus?.late_after ?? '—' }}</p>
+            <p class="text-xs text-slate-500">Terlambat sampai</p>
+            <p class="font-semibold text-slate-800">{{ todayStatus?.masuk_end ?? '—' }}</p>
           </div>
         </div>
       </div>
@@ -133,10 +154,6 @@
             <dt class="text-gray-500">Titik sekolah</dt>
             <dd class="font-mono text-xs font-medium text-slate-800">{{ locationSummary }}</dd>
           </div>
-          <div class="flex items-center justify-between gap-4">
-            <dt class="text-gray-500">Hari libur {{ holidayYear }}</dt>
-            <dd class="font-medium text-slate-800">{{ holidays.length }} hari</dd>
-          </div>
         </dl>
       </base-card>
     </div>
@@ -145,39 +162,34 @@
     <base-card
       v-if="activeTab === 'jadwal'"
       title="Jadwal Absensi Mingguan"
-      subtitle="Atur jam masuk & pulang untuk setiap hari. Hari nonaktif tidak membuka absensi mandiri."
+      subtitle="Atur jam presensi untuk setiap hari. Hari nonaktif tidak membuka absensi mandiri."
     >
       <div class="overflow-x-auto">
-        <table class="w-full min-w-[900px] text-left text-sm">
+        <table class="w-full min-w-[760px] text-left text-sm">
           <thead class="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-600">
             <tr>
               <th class="px-3 py-3 font-semibold">Hari</th>
-              <th class="px-3 py-3 font-semibold">Aktif</th>
-              <th class="px-3 py-3 font-semibold">Masuk mulai</th>
-              <th class="px-3 py-3 font-semibold">Masuk selesai</th>
-              <th class="px-3 py-3 font-semibold">Serah terima</th>
-              <th class="px-3 py-3 font-semibold">Terlambat setelah</th>
-              <th class="px-3 py-3 font-semibold">Pulang mulai</th>
-              <th class="px-3 py-3 font-semibold">Pulang selesai</th>
+              <th class="px-3 py-3 font-semibold">Status</th>
+              <th class="px-3 py-3 font-semibold">Presensi Dibuka</th>
+              <th class="px-3 py-3 font-semibold">Presensi Ditutup</th>
+              <th class="px-3 py-3 font-semibold">Presensi Pulang Dibuka</th>
+              <th class="px-3 py-3 font-semibold">Presensi Pulang Ditutup</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in schedules" :key="row.day_of_week" class="border-b border-gray-100 last:border-0">
+            <tr v-for="row in visibleSchedules" :key="row.day_of_week" class="border-b border-gray-100 last:border-0">
               <td class="px-3 py-2.5 font-medium text-slate-800">{{ row.day_name }}</td>
               <td class="px-3 py-2.5">
                 <input v-model="row.is_active" type="checkbox" class="toggle" />
               </td>
               <td class="px-3 py-2.5">
                 <input v-model="row.masuk_start" type="time" class="input font-mono" :disabled="!row.is_active" />
+                <p v-if="row.is_active" class="mt-1 text-[11px] text-gray-500">
+                  Hadir sampai <span class="font-mono font-medium text-slate-700">{{ hadirSampai(row) }}</span>
+                </p>
               </td>
               <td class="px-3 py-2.5">
                 <input v-model="row.masuk_end" type="time" class="input font-mono" :disabled="!row.is_active" />
-              </td>
-              <td class="px-3 py-2.5">
-                <input v-model="row.handover_at" type="time" class="input font-mono" :disabled="!row.is_active" />
-              </td>
-              <td class="px-3 py-2.5">
-                <input v-model="row.late_after" type="time" class="input font-mono" :disabled="!row.is_active" />
               </td>
               <td class="px-3 py-2.5">
                 <input v-model="row.pulang_start" type="time" class="input font-mono" :disabled="!row.is_active" />
@@ -191,8 +203,10 @@
       </div>
 
       <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p class="text-xs text-gray-500">
-          Contoh: Jumat biasanya pulang lebih awal. Samakan jam bila sekolah memakai pola yang sama tiap hari.
+        <p class="max-w-xl text-xs text-gray-500">
+          Status kehadiran otomatis: siswa yang presensi dalam {{ HADIR_MENIT }} menit pertama sejak presensi
+          dibuka tercatat <span class="font-medium text-slate-700">Hadir</span>, setelah itu
+          <span class="font-medium text-slate-700">Terlambat</span> sampai presensi ditutup.
         </p>
         <base-button type="button" :loading="savingSchedules" @click="saveSchedules">
           <Save class="h-4 w-4" />
@@ -200,81 +214,6 @@
         </base-button>
       </div>
     </base-card>
-
-    <!-- ── Tab Hari Libur ── -->
-    <div v-if="activeTab === 'libur'" class="grid grid-cols-1 gap-6 lg:grid-cols-5">
-      <base-card class="lg:col-span-2" :title="holidayForm.id ? 'Ubah Hari Libur' : 'Tambah Hari Libur'">
-        <form class="flex flex-col gap-4" @submit.prevent="saveHoliday">
-          <label class="flex flex-col gap-1.5">
-            <span class="text-sm font-medium text-slate-800">Tanggal</span>
-            <input v-model="holidayForm.date" type="date" required class="input font-mono" />
-          </label>
-          <label class="flex flex-col gap-1.5">
-            <span class="text-sm font-medium text-slate-800">Nama</span>
-            <input v-model="holidayForm.name" type="text" required maxlength="100" class="input" placeholder="Libur Semester" />
-          </label>
-          <label class="flex flex-col gap-1.5">
-            <span class="text-sm font-medium text-slate-800">Keterangan (opsional)</span>
-            <input v-model="holidayForm.description" type="text" maxlength="255" class="input" placeholder="Akhir semester ganjil" />
-          </label>
-          <div class="flex flex-wrap gap-3">
-            <base-button type="submit" :loading="savingHoliday">
-              <Save class="h-4 w-4" />
-              {{ holidayForm.id ? 'Simpan Perubahan' : 'Tambah' }}
-            </base-button>
-            <base-button v-if="holidayForm.id" type="button" variant="outline" @click="resetHolidayForm">
-              Batal
-            </base-button>
-          </div>
-        </form>
-      </base-card>
-
-      <base-card class="lg:col-span-3" title="Kalender Hari Libur">
-        <template #actions>
-          <select v-model.number="holidayYear" class="input w-28 font-mono" @change="loadHolidays">
-            <option v-for="year in yearOptions" :key="year" :value="year">{{ year }}</option>
-          </select>
-        </template>
-
-        <p v-if="loadingHolidays" class="py-8 text-center text-sm text-gray-500">
-          <Loader2 class="mx-auto h-5 w-5 animate-spin" />
-        </p>
-        <p v-else-if="!holidays.length" class="rounded-md border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
-          Belum ada hari libur pada {{ holidayYear }}.
-        </p>
-        <ul v-else class="divide-y divide-gray-100">
-          <li v-for="holiday in holidays" :key="holiday.id" class="flex items-start justify-between gap-4 py-3">
-            <div class="min-w-0">
-              <p class="text-sm font-semibold text-slate-800">{{ holiday.name }}</p>
-              <p class="text-xs text-gray-500">
-                {{ formatDate(holiday.date) }}
-                <template v-if="holiday.description"> · {{ holiday.description }}</template>
-              </p>
-            </div>
-            <div class="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-slate-100 hover:text-slate-800"
-                title="Ubah hari libur"
-                :aria-label="`Ubah ${holiday.name}`"
-                @click="editHoliday(holiday)"
-              >
-                <Pencil class="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
-                title="Hapus hari libur"
-                :aria-label="`Hapus ${holiday.name}`"
-                @click="removeHoliday(holiday)"
-              >
-                <Trash2 class="h-4 w-4" />
-              </button>
-            </div>
-          </li>
-        </ul>
-      </base-card>
-    </div>
 
     <!-- ── Tab Lokasi ── -->
     <div v-if="activeTab === 'lokasi'" class="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -490,6 +429,7 @@ import {
   Settings,
   Trash2,
   TriangleAlert,
+  X,
 } from '@lucide/vue'
 import type { Component } from 'vue'
 
@@ -505,14 +445,35 @@ type TabKey = 'umum' | 'jadwal' | 'libur' | 'lokasi' | 'tahun'
 const tabs: ReadonlyArray<{ key: TabKey; label: string; icon: Component }> = [
   { key: 'umum', label: 'Umum', icon: Settings },
   { key: 'jadwal', label: 'Jadwal Absensi', icon: CalendarClock },
-  { key: 'libur', label: 'Hari Libur', icon: CalendarDays },
   { key: 'lokasi', label: 'Lokasi', icon: MapPin },
   { key: 'tahun', label: 'Tahun Ajaran', icon: CalendarRange },
 ]
 
 const activeTab = ref<TabKey>('umum')
 
+/* ------------------------------------------------------------------ */
+/* Pop-up notifikasi                                                   */
+/* ------------------------------------------------------------------ */
+
+/** Lama pop-up tampil (ms): sukses singkat, error lebih lama supaya sempat dibaca. */
+const TOAST_SUKSES_MS = 4000
+const TOAST_ERROR_MS = 6000
+
 const notice = ref<{ type: 'success' | 'error'; text: string } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | undefined
+
+const closeNotice = () => {
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = undefined
+  notice.value = null
+}
+
+const showNotice = (type: 'success' | 'error', text: string) => {
+  if (toastTimer) clearTimeout(toastTimer)
+  notice.value = { type, text }
+  toastTimer = setTimeout(closeNotice, type === 'success' ? TOAST_SUKSES_MS : TOAST_ERROR_MS)
+}
+
 const todayStatus = ref<ApiSettingsResponse['status'] | null>(null)
 
 /* Umum */
@@ -525,18 +486,37 @@ const settingsForm = reactive({
 /* Jadwal */
 const schedules = ref<ApiAttendanceSchedule[]>([])
 const savingSchedules = ref(false)
+/** Hari yang tidak ditampilkan di tabel jadwal. */
+const HIDDEN_DAYS = ['Sabtu', 'Minggu']
 
-/* Hari libur */
-const holidayYear = ref(new Date().getFullYear())
-const holidays = ref<ApiSchoolHoliday[]>([])
-const loadingHolidays = ref(false)
-const savingHoliday = ref(false)
-const holidayForm = reactive({
-  id: null as number | null,
-  date: '',
-  name: '',
-  description: '',
-})
+const visibleSchedules = computed(() =>
+  schedules.value.filter((row) => !HIDDEN_DAYS.includes(row.day_name)),
+)
+
+/**
+ * Lama status "hadir" sejak presensi dibuka (menit). Nilai ini harus sama
+ * dengan UpdateAttendanceSchedulesRequest::HADIR_MENIT di backend; server
+ * yang menghitung batas sebenarnya, di sini hanya untuk tampilan.
+ */
+const HADIR_MENIT = 60
+
+/** Menit sejak tengah malam dari "HH:MM" (null bila format tidak valid). */
+const keMenit = (jam: string | null | undefined): number | null => {
+  const cocok = /^(\d{2}):(\d{2})/.exec(jam ?? '')
+  return cocok ? Number(cocok[1]) * 60 + Number(cocok[2]) : null
+}
+
+const keJam = (menit: number) =>
+  `${String(Math.floor(menit / 60)).padStart(2, '0')}:${String(menit % 60).padStart(2, '0')}`
+
+/** Jam batas hadir untuk satu baris jadwal (presensi dibuka + 60 menit). */
+const hadirSampai = (row: ApiAttendanceSchedule) => {
+  const mulai = keMenit(row.masuk_start)
+  if (mulai === null) return '—'
+
+  const selesai = keMenit(row.masuk_end)
+  return keJam(Math.min(mulai + HADIR_MENIT, selesai ?? 23 * 60 + 59, 23 * 60 + 59))
+}
 
 /* Lokasi */
 const savingLocation = ref(false)
@@ -585,10 +565,6 @@ const yearOptions = computed(() => {
   const current = new Date().getFullYear()
   return [current - 3, current - 2, current - 1, current, current + 1, current + 2]
 })
-
-const showNotice = (type: 'success' | 'error', text: string) => {
-  notice.value = { type, text }
-}
 
 const formatDate = (value?: string | null) => {
   if (!value) return '—'
@@ -682,18 +658,6 @@ const loadAll = async () => {
   }
 }
 
-const loadHolidays = async () => {
-  loadingHolidays.value = true
-  try {
-    const response = await api.schoolHolidays(holidayYear.value)
-    holidays.value = response.data
-  } catch (error) {
-    showNotice('error', apiErrorMessage(error))
-  } finally {
-    loadingHolidays.value = false
-  }
-}
-
 const loadAcademicYears = async () => {
   loadingAcademicYears.value = true
   try {
@@ -708,7 +672,7 @@ const loadAcademicYears = async () => {
 
 const saveSettings = async () => {
   savingSettings.value = true
-  notice.value = null
+  closeNotice()
   try {
     const response = await api.updateSettings({
       attendance: { self_scan_enabled: settingsForm.selfScan },
@@ -725,7 +689,7 @@ const saveSettings = async () => {
 
 const saveSchedules = async () => {
   savingSchedules.value = true
-  notice.value = null
+  closeNotice()
   try {
     const response = await api.updateAttendanceSchedules(
       schedules.value.map((row) => ({
@@ -733,83 +697,25 @@ const saveSchedules = async () => {
         is_active: row.is_active,
         masuk_start: row.masuk_start,
         masuk_end: row.masuk_end,
-        handover_at: row.handover_at || null,
+        // Dihitung server dari jam presensi dibuka (+ HADIR_MENIT); nilai
+        // yang dikirim dari sini diabaikan.
+        handover_at: null,
         pulang_start: row.pulang_start,
         pulang_end: row.pulang_end,
-        late_after: row.late_after || null,
+        late_after: null,
       })),
     )
     schedules.value = response.data
-    showNotice('success', 'Jadwal absensi berhasil disimpan.')
+
     // Ringkasan hari ini ikut berubah bila yang diedit adalah hari ini.
     const settings = await api.settings()
     applySettings(settings)
+
+    showNotice('success', 'Jadwal absensi berhasil diperbarui.')
   } catch (error) {
     showNotice('error', apiErrorMessage(error))
   } finally {
     savingSchedules.value = false
-  }
-}
-
-const resetHolidayForm = () => {
-  holidayForm.id = null
-  holidayForm.date = ''
-  holidayForm.name = ''
-  holidayForm.description = ''
-}
-
-const editHoliday = (holiday: ApiSchoolHoliday) => {
-  holidayForm.id = holiday.id
-  holidayForm.date = holiday.date
-  holidayForm.name = holiday.name
-  holidayForm.description = holiday.description ?? ''
-}
-
-const saveHoliday = async () => {
-  savingHoliday.value = true
-  notice.value = null
-  try {
-    const payload = {
-      date: holidayForm.date,
-      name: holidayForm.name,
-      description: holidayForm.description || null,
-    }
-
-    if (holidayForm.id) {
-      await api.updateSchoolHoliday(holidayForm.id, payload)
-      showNotice('success', 'Hari libur berhasil diperbarui.')
-    } else {
-      await api.createSchoolHoliday(payload)
-      showNotice('success', 'Hari libur berhasil ditambahkan.')
-    }
-
-    const savedYear = Number(holidayForm.date.slice(0, 4))
-    if (Number.isFinite(savedYear)) holidayYear.value = savedYear
-
-    resetHolidayForm()
-    await loadHolidays()
-    const settings = await api.settings()
-    applySettings(settings)
-  } catch (error) {
-    showNotice('error', apiErrorMessage(error))
-  } finally {
-    savingHoliday.value = false
-  }
-}
-
-const removeHoliday = async (holiday: ApiSchoolHoliday) => {
-  if (!window.confirm(`Hapus hari libur "${holiday.name}"?`)) return
-
-  notice.value = null
-  try {
-    await api.deleteSchoolHoliday(holiday.id)
-    if (holidayForm.id === holiday.id) resetHolidayForm()
-    await loadHolidays()
-    const settings = await api.settings()
-    applySettings(settings)
-    showNotice('success', 'Hari libur dihapus.')
-  } catch (error) {
-    showNotice('error', apiErrorMessage(error))
   }
 }
 
@@ -836,7 +742,7 @@ const saveAcademicYear = async () => {
   }
 
   savingAcademicYear.value = true
-  notice.value = null
+  closeNotice()
   try {
     const payload = {
       label: academicYearForm.label.trim(),
@@ -864,7 +770,7 @@ const saveAcademicYear = async () => {
 
 const activateAcademicYear = async (year: ApiAcademicYear) => {
   activatingYearId.value = year.id
-  notice.value = null
+  closeNotice()
   try {
     const response = await api.activateAcademicYear(year.id)
     showNotice('success', response.message || `Tahun ajaran ${year.label} diaktifkan.`)
@@ -881,7 +787,7 @@ const removeAcademicYear = async (year: ApiAcademicYear) => {
   if (year.is_active) return
   if (!window.confirm(`Hapus tahun ajaran "${year.label}"?`)) return
 
-  notice.value = null
+  closeNotice()
   try {
     await api.deleteAcademicYear(year.id)
     if (academicYearForm.id === year.id) resetAcademicYearForm()
@@ -926,7 +832,7 @@ const saveLocation = async () => {
   }
 
   savingLocation.value = true
-  notice.value = null
+  closeNotice()
   try {
     const response = await api.updateSchoolLocation({
       latitude: locationForm.latitude,
@@ -946,13 +852,10 @@ const saveLocation = async () => {
   }
 }
 
-watch(activeTab, (tab) => {
-  if (tab === 'libur') loadHolidays()
-  if (tab === 'tahun') loadAcademicYears()
-})
-
 onMounted(async () => {
-  await Promise.all([loadAll(), loadHolidays()])
+  await Promise.all([loadAll(), loadAcademicYears()])
+
+  // Jam server: mulai dari waktu server lalu maju tiap detik.
   clockTimer = setInterval(() => {
     if (serverTime.value) {
       serverTime.value = new Date(serverTime.value.getTime() + 1000)
@@ -962,6 +865,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
+  if (toastTimer) clearTimeout(toastTimer)
 })
 </script>
 
@@ -1011,5 +915,18 @@ onBeforeUnmount(() => {
 }
 .toggle:checked::after {
   transform: translateX(1.25rem);
+}
+
+/* Animasi pop-up: turun dari atas, lalu memudar saat hilang */
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-12px);
 }
 </style>

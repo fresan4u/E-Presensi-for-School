@@ -5,18 +5,6 @@
       title="Filter Rekap"
       subtitle="Pilih tanggal dan kelas untuk menampilkan rekap kehadiran."
     >
-      <!-- Export selalu tampil di menu Rekap (satu tombol, format Excel). -->
-      <template #actions>
-        <base-button
-          variant="solid"
-          data-testid="export-xlsx"
-          @click="exportExcel"
-        >
-          <Download class="h-4 w-4" />
-          Export
-        </base-button>
-      </template>
-
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <label class="flex flex-col gap-2">
           <span class="text-sm font-medium text-slate-800">Tanggal</span>
@@ -108,11 +96,22 @@
       </div>
 
       <!-- Toolbar tabel -->
-      <div>
-        <h3 class="text-base font-semibold text-slate-800">
-          {{ recap?.classroom?.name ?? 'Kelas' }}
-        </h3>
-        <p class="text-sm text-gray-500">{{ longDate }}</p>
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-slate-800">
+            {{ recap?.classroom?.name ?? 'Kelas' }}
+          </h3>
+          <p class="text-sm text-gray-500">{{ longDate }}</p>
+        </div>
+        <base-button
+          variant="solid"
+          :disabled="!rows.length"
+          data-testid="export-xlsx"
+          @click="exportExcel"
+        >
+          <Download class="h-4 w-4" />
+          Export Excel
+        </base-button>
       </div>
 
       <!-- Tabel rekap -->
@@ -130,18 +129,20 @@
           </span>
         </template>
         <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end gap-2">
+          <!-- Belum presensi (alpa) / dicap manual (izin, sakit): tampilkan aksi -->
+          <div v-if="!row.hasPresensi" class="flex items-start justify-end gap-2">
+            <!-- Tombol edit keterangan (izin / sakit / alpa) -->
             <button
-              v-if="row.attendanceId"
               type="button"
-              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-900 text-white transition-colors hover:bg-emerald-800 focus:outline-none"
-              :aria-label="`Edit ${String(row.name)}`"
-              title="Edit status / catatan"
-              data-testid="edit-row"
+              :class="EDIT_BTN"
+              :title="`Ubah keterangan ${String(row.name)}`"
+              data-testid="edit-status"
               @click="openEdit(row)"
             >
-              <Pencil class="h-4 w-4" />
+              <Pencil class="h-3.5 w-3.5" />
+              Edit
             </button>
+
             <div v-if="row.waHref" class="flex flex-col items-end gap-1">
               <a
                 :href="String(row.waHref)"
@@ -157,19 +158,66 @@
               <span class="text-[11px] text-gray-400">{{ String(row.guardianMaskedPhone) }}</span>
             </div>
             <span
-              v-else-if="row.needsNotice"
-              class="text-xs text-gray-400"
+              v-else
+              class="self-center text-xs text-gray-400"
             >
               Kontak wali belum tersedia
             </span>
-            <span v-else class="text-xs text-gray-300">—</span>
+          </div>
+
+          <!-- Sudah presensi (hadir / terlambat): tidak perlu aksi -->
+          <div v-else class="flex justify-end">
+            <span class="text-xs text-gray-400">Sudah presensi</span>
           </div>
         </template>
       </data-table>
-
-      <!-- Modal edit status / catatan (pindahan dari Data Absensi) -->
-      <edit-attendance-modal v-model="isEditOpen" :row="editingRow" @saved="handleSaved" />
     </template>
+
+    <!-- Dialog edit keterangan siswa -->
+    <modal
+      v-model="editModalOpen"
+      title="Ubah Keterangan Siswa"
+      :description="editTarget ? `${editTarget.name} · NIS ${editTarget.nis} · ${longDate}` : ''"
+    >
+      <div class="flex flex-col gap-3">
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            v-for="option in EDIT_OPTIONS"
+            :key="option"
+            type="button"
+            class="rounded-md border px-3 py-2.5 text-sm font-medium transition-colors"
+            :class="selectedStatus === option ? BTN_GRADIENT : 'border-gray-200 bg-white text-slate-700 hover:bg-slate-50'"
+            :data-testid="`pilih-${option}`"
+            @click="selectedStatus = option"
+          >
+            {{ statusLabel(option) }}
+          </button>
+        </div>
+
+        <p
+          v-if="editError"
+          class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          role="alert"
+        >
+          <TriangleAlert class="h-4 w-4 shrink-0" />
+          {{ editError }}
+        </p>
+      </div>
+
+      <template #footer>
+        <base-button variant="outline" :disabled="isSaving" @click="closeEdit">Batal</base-button>
+        <base-button
+          variant="solid"
+          :class="BTN_GRADIENT"
+          :loading="isSaving"
+          :disabled="!selectedStatus"
+          data-testid="simpan-status"
+          @click="saveStatus"
+        >
+          Simpan
+        </base-button>
+      </template>
+    </modal>
   </div>
 </template>
 
@@ -188,10 +236,26 @@ definePageMeta({
   title: 'Rekap Absensi',
 })
 
+/* ------------------------------------------------------------------ */
+/* Gaya                                                                */
+/* ------------------------------------------------------------------ */
+
+// Gradient biru: dipakai tombol Edit, pilihan status, dan tombol Simpan
+const BTN_GRADIENT =
+  'border-transparent bg-gradient-to-b from-[#006FBE] to-[#004A80] text-white shadow-md shadow-[#006FBE]/30 hover:brightness-110'
+
+const EDIT_BTN = `inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${BTN_GRADIENT}`
+
 const api = useApi()
 
-/** Status yang layak dinotifikasi ke wali (hadir tidak perlu dihubungi). */
-const NOTICE_STATUSES: AttendanceStatus[] = ['terlambat', 'izin', 'sakit', 'alpa']
+/** Status yang berarti siswa sudah presensi sendiri: tidak perlu Edit/WhatsApp. */
+const PRESENT_STATUSES: AttendanceStatus[] = ['hadir', 'terlambat']
+
+/** Status yang layak dinotifikasi ke wali (siswa belum presensi / dicap manual). */
+const NOTICE_STATUSES: AttendanceStatus[] = ['izin', 'sakit', 'alpa']
+
+/** Status yang bisa dicap manual oleh petugas. */
+const EDIT_OPTIONS: AttendanceStatus[] = ['izin', 'sakit', 'alpa']
 
 const STATUS_LABEL_OVERRIDE: Partial<Record<AttendanceStatus, string>> = {
   alpa: 'Alpa (belum absen)',
@@ -275,17 +339,19 @@ const columns: TableColumn[] = [
 
 const rows = computed<Record<string, unknown>[]>(() =>
   (recap.value?.students ?? []).map((student) => {
+    const hasPresensi = PRESENT_STATUSES.includes(student.status.code)
     const needsNotice = NOTICE_STATUSES.includes(student.status.code)
     const guardian = student.guardian
 
     return {
       id: student.id,
+      // null = siswa belum punya catatan absensi pada tanggal ini (alpa otomatis)
       attendanceId: student.attendance_id,
       nis: student.nis,
       name: student.full_name,
       status: student.status.code,
       waktu: formatTime(student.checked_at),
-      catatan: student.note,
+      hasPresensi,
       needsNotice,
       guardianName: guardian?.name ?? '',
       guardianMaskedPhone: guardian ? maskPhone(guardian.phone) : '',
@@ -305,6 +371,77 @@ const summaryCards = computed(() => {
     { key: 'alpa', label: 'Alpa', value: summary?.alpa ?? 0, valueClass: 'text-red-600' },
   ]
 })
+
+/* ---------- Edit keterangan ---------- */
+interface EditTarget {
+  /** ID siswa. */
+  id: number
+  /** ID catatan absensi; null bila siswa belum punya catatan hari itu. */
+  attendanceId: number | null
+  name: string
+  nis: string
+  status: AttendanceStatus
+}
+
+const editModalOpen = ref(false)
+const editTarget = ref<EditTarget | null>(null)
+const selectedStatus = ref<AttendanceStatus | null>(null)
+const isSaving = ref(false)
+const editError = ref('')
+
+const openEdit = (row: Record<string, unknown>) => {
+  const status = row.status as AttendanceStatus
+  editTarget.value = {
+    id: Number(row.id),
+    attendanceId: row.attendanceId == null ? null : Number(row.attendanceId),
+    name: String(row.name),
+    nis: String(row.nis),
+    status,
+  }
+  // Pilihan awal: status saat ini bila termasuk izin/sakit/alpa.
+  selectedStatus.value = EDIT_OPTIONS.includes(status) ? status : null
+  editError.value = ''
+  editModalOpen.value = true
+}
+
+const closeEdit = () => {
+  editModalOpen.value = false
+  editTarget.value = null
+  selectedStatus.value = null
+  editError.value = ''
+}
+
+const saveStatus = async () => {
+  if (!editTarget.value || !selectedStatus.value || isSaving.value) return
+
+  isSaving.value = true
+  editError.value = ''
+
+  try {
+    if (editTarget.value.attendanceId !== null) {
+      // Siswa sudah punya catatan hari itu: cukup ubah statusnya.
+      await api.updateAttendance(editTarget.value.attendanceId, {
+        status: selectedStatus.value,
+      })
+    } else {
+      // Belum ada catatan (alpa otomatis): buat catatan manual baru.
+      await api.storeAttendance({
+        student_id: editTarget.value.id,
+        attendance_date: selectedDate.value,
+        session: 'masuk',
+        status: selectedStatus.value,
+        method: 'manual',
+      })
+    }
+
+    closeEdit()
+    await loadRecap()
+  } catch (error) {
+    editError.value = apiErrorMessage(error)
+  } finally {
+    isSaving.value = false
+  }
+}
 
 /* ---------- Aksi ---------- */
 const loadRecap = async () => {
@@ -352,39 +489,6 @@ const exportExcel = async () => {
 
   const slug = (recap.value.classroom?.name ?? 'kelas').replace(/\s+/g, '-').toLowerCase()
   XLSX.writeFile(workbook, `rekap-${slug}-${selectedDate.value}.xlsx`)
-}
-
-/* ---------- Edit status / catatan (pindahan dari Data Absensi) ---------- */
-const isEditOpen = ref(false)
-const editingRow = ref<AttendanceRecord | null>(null)
-
-const openEdit = (row: Record<string, unknown>) => {
-  editingRow.value = {
-    id: Number(row.attendanceId),
-    nis: String(row.nis),
-    name: String(row.name),
-    kelas: recap.value?.classroom?.name ?? '-',
-    tanggal: longDate.value,
-    jamMasuk: String(row.waktu),
-    jamKeluar: '--:--',
-    metode: 'face recognition',
-    status: row.status as AttendanceStatus,
-    catatan: (row.catatan as string | null) ?? undefined,
-  }
-  isEditOpen.value = true
-}
-
-const handleSaved = async (updated: AttendanceRecord) => {
-  try {
-    await api.updateAttendance(updated.id, {
-      status: updated.status,
-      note: updated.catatan ?? null,
-    })
-    isEditOpen.value = false
-    await loadRecap()
-  } catch (error) {
-    errorMessage.value = apiErrorMessage(error)
-  }
 }
 
 /* ---------- Watch ---------- */

@@ -29,8 +29,7 @@ async function onSubmit() {
 
 <template>
   <div class="min-h-dvh bg-white">
-    <!-- ── Area hijau (dua warna: hijau tua di atas, putih di bawah) ── -->
-    <div class="bg-brand-700 px-6 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-28">
+    <div class="bg-gradient-to-b from-[#006FBE] to-[#004A80] px-6 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-28">
       <!-- Header: ikon scan wajah + "absensi digital" -->
       <div class="flex items-center gap-2.5">
         <span

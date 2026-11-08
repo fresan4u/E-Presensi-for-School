@@ -7,9 +7,50 @@ use Illuminate\Validation\Validator;
 
 class UpdateAttendanceSchedulesRequest extends FormRequest
 {
+    /**
+     * Lama (menit) status "hadir" berlaku sejak presensi masuk dibuka.
+     * Setelah itu siswa tercatat "terlambat" sampai presensi ditutup.
+     */
+    public const HADIR_MENIT = 60;
+
     public function authorize(): bool
     {
         return true;
+    }
+
+    /**
+     * Admin hanya mengisi jam dibuka & ditutup. Batas terlambat (`late_after`)
+     * dihitung otomatis dari jam dibuka; `handover_at` tidak dipakai lagi.
+     */
+    protected function prepareForValidation(): void
+    {
+        $rows = $this->input('schedules');
+
+        if (! is_array($rows)) {
+            return;
+        }
+
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $start = $this->minutes($row['masuk_start'] ?? null);
+            $end = $this->minutes($row['masuk_end'] ?? null);
+
+            $rows[$index]['handover_at'] = null;
+            $rows[$index]['late_after'] = null;
+
+            // Jendela masuk tidak valid: biarkan aturan validasi yang menolak.
+            if ($start === null || $end === null || $end <= $start) {
+                continue;
+            }
+
+            $late = min($start + self::HADIR_MENIT, $end, (23 * 60) + 59);
+            $rows[$index]['late_after'] = sprintf('%02d:%02d', intdiv($late, 60), $late % 60);
+        }
+
+        $this->merge(['schedules' => $rows]);
     }
 
     /**
@@ -58,7 +99,7 @@ class UpdateAttendanceSchedulesRequest extends FormRequest
                 if ($masukStart !== null && $masukEnd !== null && $masukStart >= $masukEnd) {
                     $validator->errors()->add(
                         "schedules.{$index}.masuk_end",
-                        'Jam selesai masuk harus lebih besar dari jam mulai masuk.',
+                        'Jam presensi ditutup harus lebih besar dari jam presensi dibuka.',
                     );
                 }
 

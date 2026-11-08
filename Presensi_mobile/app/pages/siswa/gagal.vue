@@ -43,7 +43,7 @@ const saran = [
             class="flex gap-3 rounded-xl bg-slate-50 p-4"
           >
             <span
-              class="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-700 text-[11px] font-bold text-white"
+              class="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-700 text-[11px] font-bold text-white"
             >
               {{ i + 1 }}
             </span>
@@ -63,7 +63,7 @@ const saran = [
         <span>Scan Lagi</span>
       </button>
       <button type="button" class="btn-outline" @click="router.push('/siswa')">
-        <AppIcon name="chevron-left" :size="20" class="text-brand-700" />
+        <AppIcon name="chevron-left" :size="20" class="text-black-700" />
         <span>Kembali ke Beranda</span>
       </button>
     </footer>

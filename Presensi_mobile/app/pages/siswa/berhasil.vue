@@ -37,7 +37,7 @@ onMounted(() => {
   <div class="flex min-h-dvh flex-col bg-slate-50">
     <!-- ── Ikon + judul ── -->
     <header class="px-6 pt-[calc(env(safe-area-inset-top)+3rem)] pb-8 text-center">
-      <div class="mx-auto flex size-24 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+      <div class="mx-auto flex size-24 items-center justify-center rounded-full bg-blue-50 text-blue-600">
         <AppIcon name="check" :size="48" :stroke-width="2.4" />
       </div>
       <h1 class="mt-6 text-2xl font-extrabold tracking-tight text-slate-900">

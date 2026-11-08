@@ -306,8 +306,8 @@ function kembali() {
 
           <!-- Panduan sebelum kamera menyala -->
           <div v-else class="flex flex-col items-center px-5 py-8 text-center">
-            <span class="flex size-16 items-center justify-center rounded-2xl bg-brand-50">
-              <AppIcon name="scan-face" :size="30" class="text-brand-700" />
+            <span class="flex size-16 items-center justify-center rounded-2xl bg-blue-50">
+              <AppIcon name="scan-face" :size="30" class="text-blue-700" />
             </span>
             <h2 class="mt-4 text-base font-bold text-slate-900">
               {{ isLoadingSamples ? 'Memuat data wajah…' : 'Siap Mendaftarkan Wajah' }}
